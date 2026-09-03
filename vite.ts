@@ -283,6 +283,33 @@ function invalidateAssetCache(file?: string) {
   }
 }
 
+export function startServerWithFallback(
+  options: Parameters<typeof serve>[0],
+  maxAttempts = 10,
+): Server<unknown> {
+  const initialPort =
+    typeof options.port === 'string' ? Number.parseInt(options.port, 10) : (options.port ?? 0);
+  if (initialPort === 0) return serve(options);
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const targetPort = initialPort + attempt;
+    try {
+      return serve({ ...options, port: targetPort } as Parameters<typeof serve>[0]);
+    } catch (err: unknown) {
+      const isPortInUse =
+        err instanceof Error &&
+        (('code' in err && (err as { code: string }).code === 'EADDRINUSE') ||
+          err.message.includes('in use'));
+      if (!isPortInUse || attempt === maxAttempts - 1) {
+        throw err;
+      }
+    }
+  }
+  throw new Error(
+    `Could not find an available port after ${maxAttempts} attempts starting from ${initialPort}`,
+  );
+}
+
 export function createDevServer(port = CONFIG.devPort, enableLiveReload = true): Server<unknown> {
   const activeSockets = new Set<ServerWebSocket<unknown>>();
 
@@ -318,15 +345,14 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
             return;
           }
 
-          await compileTailwind(true);
-
           let compileError: string | null = null;
+
           if (file.startsWith('src/') && (file.endsWith('.ts') || file.endsWith('.js'))) {
             const targetPath = join(CONFIG.root, file);
             if (await bunFile(targetPath).exists()) {
-              const compileResult = await compileTypeScript(targetPath, true);
-              if ('error' in compileResult) {
-                compileError = compileResult.error;
+              const res = await compileTypeScript(targetPath, true);
+              if ('error' in res) {
+                compileError = res.error;
               }
             }
           }
@@ -343,15 +369,19 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
                 continue;
               }
 
-              socket.send(
-                JSON.stringify({
-                  type: 'css-update',
-                  path: '/src/style.css',
-                  timestamp,
-                }),
-              );
-
-              if (file.startsWith('src/') && (file.endsWith('.ts') || file.endsWith('.js'))) {
+              if (file.endsWith('.css')) {
+                await compileTailwind(true);
+                socket.send(
+                  JSON.stringify({
+                    type: 'css-update',
+                    path: '/src/style.css',
+                    timestamp,
+                  }),
+                );
+              } else if (
+                file.startsWith('src/') &&
+                (file.endsWith('.ts') || file.endsWith('.js'))
+              ) {
                 socket.send(
                   JSON.stringify({
                     type: 'js-update',
@@ -359,6 +389,8 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
                     timestamp,
                   }),
                 );
+              } else if (file.endsWith('.html')) {
+                socket.send(JSON.stringify({ type: 'full-reload' }));
               }
             } catch (_) {}
           }
@@ -367,7 +399,7 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
     } catch (_) {}
   }
 
-  return serve({
+  return startServerWithFallback({
     port,
     websocket: {
       open(ws) {
@@ -511,7 +543,7 @@ export async function buildProduction() {
 }
 
 export function previewProduction(port = CONFIG.previewPort): Server<unknown> {
-  const server = serve({
+  const server = startServerWithFallback({
     port,
     async fetch(req) {
       const url = new URL(req.url);
@@ -548,6 +580,9 @@ if (import.meta.main) {
   if (cmd === 'dev') {
     const server = createDevServer(CONFIG.devPort, true);
     const port = server.port ?? CONFIG.devPort;
+    if (port !== CONFIG.devPort) {
+      console.log(`\n  ℹ Port ${CONFIG.devPort} is in use, using ${port} instead`);
+    }
     const networkUrl = getNetworkUrl(port);
     console.log(`\n  ⚡ BunVite dev server running at:`);
     console.log(`     Local:   http://localhost:${port}/`);

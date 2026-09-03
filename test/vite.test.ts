@@ -10,6 +10,7 @@ import {
   getNetworkUrl,
   previewProduction,
   replaceEnvInHtml,
+  startServerWithFallback,
 } from '../vite';
 
 describe('dev server', () => {
@@ -372,6 +373,37 @@ describe('environment variables & HTML transforms', () => {
       await Bun.file(testFile)
         .delete()
         .catch(() => {});
+    }
+  });
+});
+
+describe('port collision handling', () => {
+  test('increments port when initial port is in use', () => {
+    const s1 = startServerWithFallback({ port: 0, fetch: () => new Response('s1') });
+    const port = s1.port ?? 0;
+
+    const s2 = startServerWithFallback({ port, fetch: () => new Response('s2') });
+    try {
+      expect(s2.port).toBe(port + 1);
+    } finally {
+      s1.stop(true);
+      s2.stop(true);
+    }
+  });
+
+  test('increments repeatedly past multiple occupied ports', () => {
+    const s1 = startServerWithFallback({ port: 0, fetch: () => new Response('s1') });
+    const port = s1.port ?? 0;
+    const s2 = startServerWithFallback({ port, fetch: () => new Response('s2') });
+    const s3 = startServerWithFallback({ port, fetch: () => new Response('s3') });
+
+    try {
+      expect(s2.port).toBe(port + 1);
+      expect(s3.port).toBe(port + 2);
+    } finally {
+      s1.stop(true);
+      s2.stop(true);
+      s3.stop(true);
     }
   });
 });
