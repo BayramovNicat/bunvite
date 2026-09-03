@@ -34,24 +34,44 @@ Linear gradients in v4 match the standard CSS `linear-gradient()` naming convent
 
 ---
 
-### 📏 Sizing, Dimensions & Pixels (`w-*`, `h-*`, `size-*`)
+### 📏 Sizing, Dimensions & Pixels (`w-*`, `h-*`, `size-*`, `max-w-*`)
 
-In v4, sizing is unified with the continuous dynamic spacing scale (`--spacing`: 0.25rem = 4px). Fractional values (multiples of `0.5` = 2px) are first-class citizens. **Avoid arbitrary pixel brackets (`[18px]`, `[14px]`) when a scale value exists.**
+In Tailwind CSS v4, the spacing scale is **continuous and infinite**, derived directly from `--spacing: 0.25rem` (`4px`).
 
-| Use Case | ❌ Outdated / Anti-pattern | ✅ Modern Canonical (v4) | Details / Math |
+#### ⚡ The Global Pixel-to-Scale Law
+Before ever writing an arbitrary pixel bracket (`[...px]`), apply this universal formula:
+
+$$\text{Scale Token } N = \frac{\text{Target Pixels}}{4}$$
+
+1. **Even Multiples of 4px ($\text{px} \pmod 4 = 0$):**
+   * Always write `w-N`, `h-N`, `size-N`, `max-w-N`, `min-w-N`, `p-N`, `m-N`, `gap-N`.
+   * **BANNED:** `[360px]`, `[320px]`, `[280px]`, `[140px]`, `[68px]`, `[48px]`, `[40px]`
+   * **CANONICAL:** `90`, `80`, `70`, `35`, `17`, `12`, `10`
+   * *Formula:* $360 / 4 = 90 \implies$ `max-w-90` (never `max-w-[360px]`).
+
+2. **Half-Step Multiples of 2px ($\text{px} \pmod 2 = 0$):**
+   * Always write fractional scale numbers `N.5`.
+   * **BANNED:** `[18px]`, `[14px]`, `[10px]`, `[6px]`, `[2px]`
+   * **CANONICAL:** `4.5`, `3.5`, `2.5`, `1.5`, `0.5`
+   * *Formula:* $18 / 4 = 4.5 \implies$ `size-4.5` (never `size-[18px]`).
+
+3. **Only Use Arbitrary Brackets `[Npx]` if:**
+   * Value is an odd pixel integer (e.g. `[3px]`, `[7px]`, `[13px]`) or non-quarter subpixel (`[12.5px]`).
+   * For 1px, always use the dedicated keyword: `size-px`, `w-px`, `h-px`.
+
+| Use Case | ❌ Banned Arbitrary Bracket | ✅ Universal Canonical (v4) | Global Derivation |
 | :--- | :--- | :--- | :--- |
-| **Fractional Square (18px)** | `size-[18px]`, `w-[18px] h-[18px]` | `size-4.5` | `4.5 * 4px = 18px` (`1.125rem`) |
-| **Fractional Square (14px)** | `size-[14px]`, `w-[14px] h-[14px]` | `size-3.5` | `3.5 * 4px = 14px` (`0.875rem`) |
-| **Fractional Square (10px)** | `size-[10px]`, `w-[10px] h-[10px]` | `size-2.5` | `2.5 * 4px = 10px` (`0.625rem`) |
-| **Fractional Square (6px)** | `size-[6px]`, `w-[6px] h-[6px]` | `size-1.5` | `1.5 * 4px = 6px` (`0.375rem`) |
-| **Square Width + Height** | `w-5 h-5`, `w-12 h-12` | `size-5`, `size-12` | Sets both `width` & `height` in a single utility |
-| **Full Square Size** | `w-full h-full` | `size-full` | Sets `width: 100%; height: 100%` |
-| **Pixel Square Size** | `w-px h-px` | `size-px` | Sets `width: 1px; height: 1px` |
-| **Dynamic Spacing** | `w-[68px]` | `w-17` | `17 * 4px = 68px` (dynamic scale derived from `--spacing`) |
-| **Dynamic Spacing** | `h-[140px]` | `h-35` | `35 * 4px = 140px` |
-| **Dynamic Viewport Height** | `h-screen` *(mobile jumps)* | `h-dvh` *(dynamic)*, `h-svh`, `h-lvh` | Viewport height accounting for mobile toolbars |
+| **Any width divisible by 4px** | `max-w-[360px]`, `w-[360px]` | `max-w-90`, `w-90` | $360 / 4 = 90$ |
+| **Any width divisible by 4px** | `max-w-[320px]`, `w-[320px]` | `max-w-80`, `w-80` | $320 / 4 = 80$ |
+| **Any height divisible by 4px** | `h-[140px]`, `max-h-[140px]` | `h-35`, `max-h-35` | $140 / 4 = 35$ |
+| **Any dimension divisible by 2px** | `size-[18px]`, `w-[18px] h-[18px]` | `size-4.5` | $18 / 4 = 4.5$ |
+| **Any dimension divisible by 2px** | `size-[14px]`, `w-[14px] h-[14px]` | `size-3.5` | $14 / 4 = 3.5$ |
+| **Square Width + Height** | `w-5 h-5`, `w-12 h-12` | `size-5`, `size-12` | Unified dimension utility |
+| **Full Square Size** | `w-full h-full` | `size-full` | Unified dimension utility |
+| **Pixel Square Size (1px)** | `w-px h-px` | `size-px` | Unified dimension utility |
+| **Dynamic Viewport Height** | `h-screen` *(mobile jumps)* | `h-dvh` *(dynamic)*, `h-svh`, `h-lvh` | Viewport with mobile toolbar resilience |
 | **Dynamic Viewport Width** | `w-screen` | `w-dvw`, `w-svw`, `w-lvw` | Dynamic viewport widths |
-| **Logical Sizing** | *(custom CSS)* | `inline-full`, `block-full` | Modern logical property sizing (`inline-size`, `block-size`) |
+| **Logical Sizing** | *(custom CSS)* | `inline-full`, `block-full` | Modern logical property sizing |
 
 ---
 
@@ -162,7 +182,7 @@ In arbitrary values with multiple tokens (like grid template columns), spaces ar
 When generating or editing Tailwind classes, ensure:
 1. **Gradients:** `bg-linear-to-*` used instead of `bg-gradient-to-*`.
 2. **Squares:** `size-*` used instead of repetitive `w-* h-*`.
-3. **Fractional Sizing:** Use scale fractions like `size-4.5` (18px), `size-3.5` (14px), `size-2.5` (10px) instead of arbitrary brackets `size-[18px]`.
+3. **Dynamic & Fractional Sizing:** Use continuous scale values like `max-w-90` (360px), `size-4.5` (18px), `size-3.5` (14px) instead of arbitrary brackets `max-w-[360px]` or `size-[18px]`.
 4. **Percentage Opacities:** Use bare percentage slash notation like `hover:bg-white/2` or `bg-black/5` instead of bracketed decimals `hover:bg-white/[0.02]`.
 5. **Word Wrapping:** `wrap-break-word` or `wrap-anywhere` used instead of `break-words`.
 6. **Flexbox:** `grow` and `shrink-0` used instead of `flex-grow` / `flex-shrink-0`.

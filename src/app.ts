@@ -84,11 +84,11 @@ export const createApp = (root: HTMLElement, initialState = createInitialState()
 	const controller = new AbortController();
 	const { signal } = controller;
 
-	root.className = "w-full max-w-[360px]";
+	root.className = "w-full max-w-90";
 	root.innerHTML = /*html*/ `
 		<div class="bg-zinc-900/80 border border-zinc-800/60 rounded-2xl shadow-2xl shadow-black/50 overflow-hidden backdrop-blur-sm">
 			<div class="flex items-center justify-between px-5 pt-5 pb-4">
-				<h1 class="text-base font-semibold text-zinc-100 tracking-tight bg-cyan-900">Tasks</h1>
+				<h1 class="text-base font-semibold text-zinc-100 tracking-tight">Tasks</h1>
 				<span id="task-badge" class="text-xs font-medium px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400"></span>
 			</div>
 
