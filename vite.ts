@@ -253,6 +253,32 @@ async function renderDevHtml(enableLiveReload: boolean): Promise<string> {
   return html;
 }
 
+export function devResponse(
+  req: Request,
+  content: string | Uint8Array | ArrayBuffer,
+  contentType: string,
+  extraHeaders: Record<string, string> = {},
+): Response {
+  const etag = `"${Bun.hash(content).toString(16)}"`;
+  const baseHeaders: Record<string, string> = {
+    'Access-Control-Allow-Origin': '*',
+    'Cache-Control': 'no-cache',
+    ETag: etag,
+    ...extraHeaders,
+  };
+
+  if (req.headers.get('if-none-match') === etag) {
+    return new Response(null, { status: 304, headers: baseHeaders });
+  }
+
+  return new Response(content as BodyInit, {
+    headers: {
+      'Content-Type': contentType,
+      ...baseHeaders,
+    },
+  });
+}
+
 async function compileTypeScript(
   filePath: string,
   force = false,
@@ -432,6 +458,17 @@ export function createDevServer(
       const url = new URL(req.url);
       const pathname = url.pathname;
 
+      if (req.method === 'OPTIONS') {
+        return new Response(null, {
+          status: 204,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH, OPTIONS',
+            'Access-Control-Allow-Headers': '*',
+          },
+        });
+      }
+
       for (const [prefix, config] of Object.entries(proxy)) {
         if (pathname.startsWith(prefix)) {
           const target = typeof config === 'string' ? config : config.target;
@@ -457,7 +494,10 @@ export function createDevServer(
             const msg = err instanceof Error ? err.message : String(err);
             return new Response(`Bad Gateway: Proxy error connecting to ${target}\n${msg}`, {
               status: 502,
-              headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+              headers: {
+                'Content-Type': 'text/plain; charset=utf-8',
+                'Access-Control-Allow-Origin': '*',
+              },
             });
           }
         }
@@ -470,22 +510,12 @@ export function createDevServer(
 
       if (pathname === '/' || pathname === '/index.html') {
         const html = await renderDevHtml(enableLiveReload);
-        return new Response(html, {
-          headers: {
-            'Content-Type': 'text/html; charset=utf-8',
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-          },
-        });
+        return devResponse(req, html, 'text/html; charset=utf-8');
       }
 
       if (pathname === '/src/style.css' || pathname.endsWith('.css')) {
         const css = await compileTailwind();
-        return new Response(css, {
-          headers: {
-            'Content-Type': 'text/css; charset=utf-8',
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-          },
-        });
+        return devResponse(req, css, 'text/css; charset=utf-8');
       }
 
       if (pathname.endsWith('.ts') || pathname.endsWith('.js')) {
@@ -498,38 +528,36 @@ export function createDevServer(
               socket.send(JSON.stringify({ type: 'build-error', message: result.error }));
             } catch (_) {}
           }
-          return new Response(result.error, { status: 500 });
+          return new Response(result.error, {
+            status: 500,
+            headers: { 'Access-Control-Allow-Origin': '*' },
+          });
         }
 
-        return new Response(result.code, {
-          headers: {
-            'Content-Type': 'application/javascript; charset=utf-8',
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-          },
-        });
+        return devResponse(req, result.code, 'application/javascript; charset=utf-8');
       }
 
       const publicFile = bunFile(join(CONFIG.publicDir, pathname.replace(/^\//, '')));
       if (await publicFile.exists()) {
-        return new Response(publicFile);
+        const bytes = await publicFile.arrayBuffer();
+        return devResponse(req, bytes, publicFile.type || 'application/octet-stream');
       }
 
       const staticFile = bunFile(join(CONFIG.root, pathname.replace(/^\//, '')));
       if (await staticFile.exists()) {
-        return new Response(staticFile);
+        const bytes = await staticFile.arrayBuffer();
+        return devResponse(req, bytes, staticFile.type || 'application/octet-stream');
       }
 
       if (req.headers.get('accept')?.includes('text/html')) {
         const html = await renderDevHtml(enableLiveReload);
-        return new Response(html, {
-          headers: {
-            'Content-Type': 'text/html; charset=utf-8',
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-          },
-        });
+        return devResponse(req, html, 'text/html; charset=utf-8');
       }
 
-      return new Response('Not Found', { status: 404 });
+      return new Response('Not Found', {
+        status: 404,
+        headers: { 'Access-Control-Allow-Origin': '*' },
+      });
     },
   });
 }

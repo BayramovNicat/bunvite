@@ -532,3 +532,53 @@ describe('api dev proxy', () => {
     }
   });
 });
+
+describe('cors & etag caching', () => {
+  let devServer: Server<unknown>;
+  let devBase: string;
+
+  beforeAll(() => {
+    devServer = createDevServer(0, false);
+    devBase = `http://localhost:${devServer.port}`;
+  });
+
+  afterAll(() => {
+    devServer.stop(true);
+  });
+
+  test('includes CORS headers on GET requests', async () => {
+    const res = await fetch(`${devBase}/src/app.ts`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('access-control-allow-origin')).toBe('*');
+  });
+
+  test('responds to OPTIONS preflight with 204 and CORS headers', async () => {
+    const res = await fetch(`${devBase}/src/app.ts`, { method: 'OPTIONS' });
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-origin')).toBe('*');
+    expect(res.headers.get('access-control-allow-methods')).toContain('GET');
+  });
+
+  test('attaches ETag and returns 304 Not Modified when cached', async () => {
+    const firstRes = await fetch(`${devBase}/src/app.ts`);
+    expect(firstRes.status).toBe(200);
+    const etag = firstRes.headers.get('etag');
+    expect(etag).not.toBeNull();
+    expect(firstRes.headers.get('cache-control')).toBe('no-cache');
+
+    const secondRes = await fetch(`${devBase}/src/app.ts`, {
+      headers: { 'If-None-Match': etag ?? '' },
+    });
+    expect(secondRes.status).toBe(304);
+    expect((await secondRes.text()).length).toBe(0);
+  });
+
+  test('returns 200 when If-None-Match does not match', async () => {
+    const res = await fetch(`${devBase}/src/app.ts`, {
+      headers: { 'If-None-Match': '"stale-etag-value"' },
+    });
+    expect(res.status).toBe(200);
+    const code = await res.text();
+    expect(code.length).toBeGreaterThan(0);
+  });
+});

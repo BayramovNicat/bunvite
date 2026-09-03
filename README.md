@@ -14,10 +14,12 @@ Designed as a clean, radical-simplicity starter template for modern frontend app
 - **🔤 `import.meta.env` & `.env`:** Built-in support for `.env` files, `DEV`, `PROD`, `MODE`, `BASE_URL`, client-side `VITE_*` variable injection, `%VITE_*%` HTML placeholders, and typed definitions in `src/env.d.ts`.
 - **🔀 API Dev Proxy (`server.proxy`):** Forward `/api/*` requests to your backend server with path rewrites, header forwarding, streaming request bodies, and `VITE_PROXY_TARGET` `.env` configuration.
 - **🔌 Automatic Port Collision Handling:** Automatically detects occupied ports (e.g. `5173`) and binds to the next available port (`5174`, `5175`, etc.).
+- **🏷️ ETags & 304 Not Modified:** Generates 64-bit content ETags for dev assets and responds with `304 Not Modified` on unchanged files, eliminating redundant re-transfers.
+- **🛡️ Dev CORS Headers:** Automatically sets `Access-Control-Allow-Origin: *` and handles `OPTIONS` preflight requests for Web Workers, iframes, and local micro-frontends.
 - **🌐 `public/` Directory Serving:** Root-relative static assets served seamlessly during development and copied recursively to `dist/` on build.
 - **🗺️ SPA Fallback:** Unknown client-side paths automatically fall back to `index.html` for clean single-page app routing.
-- **📦 Production Pipeline:** Content-hashed JavaScript (`app.[hash].js`) and CSS (`style.[hash].css`), minification, and an immutable-cached preview server (`max-age=31536000, immutable`).
-- **🧪 39 Automated Tests:** Full test suite covering all engine capabilities, parity features, and WebKit DOM E2E workflows running in **~1s**.
+- **📦 Production Pipeline:** Content-hashed JavaScript (`app.[hash].js`) and CSS (`style.[hash].css`), minification, and an immutable-cached preview server (`max-age=31536000, immutable`) with gzip compression.
+- **🧪 44 Automated Tests:** Full test suite covering all engine capabilities, parity features, and WebKit DOM E2E workflows running in **~1.5s**.
 
 ---
 
@@ -71,7 +73,7 @@ bun install
 | `bun run dev` | `bun --watch run vite.ts dev` | Starts dev server at `http://localhost:5173/` with HMR (use `--open` or `-o` to launch browser) |
 | `bun run build` | `bun run vite.ts build` | Builds minified, hashed bundle in `dist/` and prints uncompressed + gzip size summary |
 | `bun run preview` | `bun run vite.ts preview` | Serves `dist/` locally with immutable asset caching (`--open` supported) |
-| `bun run test` | `bun test --parallel` | Runs all 40 automated unit, integration, and E2E tests |
+| `bun run test` | `bun test --parallel` | Runs all 44 automated unit, integration, and E2E tests |
 | `bun run check` | `bun run --parallel "check:*"` | Runs typecheck (`tsc`), linter (`biome`), and tests in parallel |
 | `bun run format` | `biome format --write .` | Formats all code according to project style guidelines |
 
