@@ -1,6 +1,5 @@
 {
+  "css.validate": false,
   "css.lint.unknownAtRules": "ignore",
-  "editor.formatOnSave": true,
-  "editor.tabSize": 2,
-  "editor.insertSpaces": true
+  "tailwindCSS.experimental.configFile": "src/style.css"
 }

@@ -28,13 +28,13 @@ This skill documents the architecture, conventions, and rules for working with t
 
 Always use the existing scripts defined in [`package.json`](file:///Users/nicat/Documents/antigravity/agitated-galileo/package.json):
 
-| Command | Action | Engine Internals |
-| :--- | :--- | :--- |
-| `bun run dev` | Starts dev server | Spawns `bun --watch run vite.ts dev`. Watches files, compiles on demand, serves live HMR over WebSocket (`/ws-hmr`). Supports `--open` / `-o`. |
-| `bun run build` | Builds production bundle | Cleans `dist/`, runs `Bun.build` with minification + hashing, compiles Tailwind CSS v4, replaces `%VITE_*%` in `index.html`, and prints uncompressed & gzip size summary. |
-| `bun run preview` | Previews `dist/` | Serves `dist/` with on-the-fly gzip compression, `Cache-Control: immutable`, and SPA fallback routing. Supports `--open` / `-o`. |
-| `bun run test` | Runs test suite | Runs 40+ tests across DOM E2E and engine parity suites in ~1s. |
-| `bun run check` | Typecheck, lint & tests | Runs `tsc`, `biome check`, and `bun test` concurrently in parallel. |
+| Command           | Action                   | Engine Internals                                                                                                                                                          |
+| :---------------- | :----------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `bun run dev`     | Starts dev server        | Spawns `bun --watch run vite.ts dev`. Watches files, compiles on demand, serves live HMR over WebSocket (`/ws-hmr`). Supports `--open` / `-o`.                            |
+| `bun run build`   | Builds production bundle | Cleans `dist/`, runs `Bun.build` with minification + hashing, compiles Tailwind CSS v4, replaces `%VITE_*%` in `index.html`, and prints uncompressed & gzip size summary. |
+| `bun run preview` | Previews `dist/`         | Serves `dist/` with on-the-fly gzip compression, `Cache-Control: immutable`, and SPA fallback routing. Supports `--open` / `-o`.                                          |
+| `bun run test`    | Runs test suite          | Runs 40+ tests across DOM E2E and engine parity suites in ~1s.                                                                                                            |
+| `bun run check`   | Typecheck, lint & tests  | Runs `tsc`, `biome check`, and `bun test` concurrently in parallel.                                                                                                       |
 
 ---
 
@@ -43,6 +43,7 @@ Always use the existing scripts defined in [`package.json`](file:///Users/nicat/
 When modifying or creating client code in `src/`:
 
 ### 1. State Preservation via `__hmr_state__`
+
 The dev server transforms state variables to attach to `window.__hmr_state__` during compilation:
 
 ```typescript
@@ -54,9 +55,11 @@ var state = (window.__hmr_state__ ??= {
 ```
 
 ### 2. Active Input Focus Preservation
+
 The client HMR runtime automatically captures the active focused input (`#todo-input`), its text value, and selection cursor (`selectionStart` / `selectionEnd`), and restores them after replacing the module in the DOM. Maintain standard input IDs where focus preservation is required.
 
 ### 3. Stylesheet Hot-Swapping
+
 Editing `src/style.css` compiles Tailwind CSS in memory and notifies the browser. The browser swaps `<link rel="stylesheet">` tags with timestamp query strings (`?t=...`) without reloading the page or losing JavaScript state.
 
 ---
@@ -68,6 +71,7 @@ Editing `src/style.css` compiles Tailwind CSS in memory and notifies the browser
 - **HTML Token Replacement:** Tokens like `%VITE_APP_TITLE%` in `index.html` are automatically replaced at compile/build time.
 
 ### Adding New Environment Variables:
+
 1. Add the variable to [`.env`](file:///Users/nicat/Documents/antigravity/agitated-galileo/.env) (and [`.env.example`](file:///Users/nicat/Documents/antigravity/agitated-galileo/.env.example)):
    ```bash
    VITE_NEW_FEATURE=true
@@ -108,14 +112,19 @@ Editing `src/style.css` compiles Tailwind CSS in memory and notifies the browser
 To bypass browser CORS when connecting to a local backend API:
 
 ### Method A: Zero-Code `.env` Proxy
+
 Set `VITE_PROXY_TARGET` in [`.env`](file:///Users/nicat/Documents/antigravity/agitated-galileo/.env):
+
 ```bash
 VITE_PROXY_TARGET=http://localhost:8080
 ```
+
 Any frontend request to `/api/*` (e.g. `fetch('/api/tasks')`) is automatically forwarded to `http://localhost:8080/api/tasks`.
 
 ### Method B: Custom Proxy Rules in `vite.ts`
+
 Configure `CONFIG.proxy` in [`vite.ts`](file:///Users/nicat/Documents/antigravity/agitated-galileo/vite.ts):
+
 ```typescript
 export const CONFIG = {
   // ...
@@ -128,6 +137,7 @@ export const CONFIG = {
   },
 };
 ```
+
 The proxy uses native duplex streaming (`duplex: 'half'`), preserves query strings, forwards custom headers, and returns `502 Bad Gateway` if the backend is down.
 
 ---
