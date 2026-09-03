@@ -11,7 +11,7 @@ function addTodo() {
   if (!text) return;
 
   todos.push({
-    id: Date.now().toString(),
+    id: crypto.randomUUID(),
     text: text,
     completed: false
   });

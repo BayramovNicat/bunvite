@@ -2,138 +2,148 @@ import { test, expect, describe, beforeAll, afterAll } from "bun:test";
 import type { Server } from "bun";
 import { createAppServer } from "../src/server";
 
-describe("Native Todo App E2E Test Suite", () => {
+describe("Native Todo App Ultra-Fast E2E Suite", () => {
   let server: Server<unknown>;
   let baseUrl: string;
+  let webview: Bun.WebView;
 
-  beforeAll(() => {
-    server = createAppServer(0); // ephemeral random port
+  beforeAll(async () => {
+    server = createAppServer(0);
     baseUrl = `http://localhost:${server.port}`;
+
+    webview = new Bun.WebView();
+    await webview.navigate(baseUrl);
   });
 
-  afterAll(() => {
+  afterAll(async () => {
+    await webview.close();
     server.stop(true);
   });
 
-  test("1. renders initial empty state correctly", async () => {
-    await using webview = new Bun.WebView();
-    await webview.navigate(baseUrl);
+  test("1. verify initial page state (batched IPC)", async () => {
+    // Single IPC roundtrip for all state checks
+    const state = (await webview.evaluate(`(() => ({
+      title: document.title,
+      header: document.querySelector('h1')?.textContent,
+      count: document.querySelector('#todo-count')?.textContent,
+      itemsCount: document.querySelectorAll('.todo-item').length,
+      emptyVisible: window.getComputedStyle(document.querySelector('#empty-state')).display !== 'none'
+    }))()`)) as {
+      title: string;
+      header: string;
+      count: string;
+      itemsCount: number;
+      emptyVisible: boolean;
+    };
 
-    const title = (await webview.evaluate("document.title")) as string;
-    const headerText = (await webview.evaluate("document.querySelector('h1')?.textContent")) as string;
-    const countText = (await webview.evaluate("document.querySelector('#todo-count')?.textContent")) as string;
-    const emptyStateDisplay = (await webview.evaluate(
-      "window.getComputedStyle(document.querySelector('#empty-state')).display"
-    )) as string;
-
-    expect(title).toBe("Native Bun Todo App");
-    expect(headerText).toBe("Bun Todos");
-    expect(countText).toBe("0 items left");
-    expect(emptyStateDisplay).not.toBe("none");
+    expect(state.title).toBe("Native Bun Todo App");
+    expect(state.header).toBe("Bun Todos");
+    expect(state.count).toBe("0 items left");
+    expect(state.itemsCount).toBe(0);
+    expect(state.emptyVisible).toBe(true);
   });
 
-  test("2. adds new todos and updates counter", async () => {
-    await using webview = new Bun.WebView();
-    await webview.navigate(baseUrl);
+  test("2. fast batch-add tasks and verify live DOM", async () => {
+    // Fast batch entry + event trigger (instantaneous vs character-by-character delay)
+    const result = (await webview.evaluate(`(() => {
+      const input = document.querySelector('#todo-input');
+      const form = document.querySelector('#todo-form');
+      const tasks = ["Learn Bun", "Write E2E Tests", "Deploy to Production"];
 
-    // Add first todo: "Buy groceries"
-    await webview.click("#todo-input");
-    await webview.type("Buy groceries");
-    await webview.click("#add-todo-btn");
+      tasks.forEach(task => {
+        input.value = task;
+        form.dispatchEvent(new Event('submit', { cancelable: true }));
+      });
 
-    // Add second todo: "Write Bun tests"
-    await webview.click("#todo-input");
-    await webview.type("Write Bun tests");
-    await webview.click("#add-todo-btn");
+      return {
+        itemsCount: document.querySelectorAll('.todo-item').length,
+        countText: document.querySelector('#todo-count')?.textContent,
+        itemTexts: Array.from(document.querySelectorAll('.todo-text')).map(el => el.textContent)
+      };
+    })()`)) as {
+      itemsCount: number;
+      countText: string;
+      itemTexts: string[];
+    };
 
-    const itemsCount = (await webview.evaluate("document.querySelectorAll('.todo-item').length")) as number;
-    const countText = (await webview.evaluate("document.querySelector('#todo-count')?.textContent")) as string;
-    const firstItemText = (await webview.evaluate("document.querySelectorAll('.todo-text')[0]?.textContent")) as string;
-    const secondItemText = (await webview.evaluate("document.querySelectorAll('.todo-text')[1]?.textContent")) as string;
-
-    expect(itemsCount).toBe(2);
-    expect(countText).toBe("2 items left");
-    expect(firstItemText).toBe("Buy groceries");
-    expect(secondItemText).toBe("Write Bun tests");
+    expect(result.itemsCount).toBe(3);
+    expect(result.countText).toBe("3 items left");
+    expect(result.itemTexts).toEqual(["Learn Bun", "Write E2E Tests", "Deploy to Production"]);
   });
 
-  test("3. toggles todo completion", async () => {
-    await using webview = new Bun.WebView();
-    await webview.navigate(baseUrl);
+  test("3. toggle task completion", async () => {
+    const result = (await webview.evaluate(`(() => {
+      const checkboxes = document.querySelectorAll('.todo-checkbox');
+      checkboxes[1].click(); // complete second task
 
-    // Add a todo
-    await webview.click("#todo-input");
-    await webview.type("Complete this task");
-    await webview.click("#add-todo-btn");
+      return {
+        completedCount: document.querySelectorAll('.todo-item.completed').length,
+        countText: document.querySelector('#todo-count')?.textContent
+      };
+    })()`)) as {
+      completedCount: number;
+      countText: string;
+    };
 
-    // Toggle completion checkbox
-    await webview.click(".todo-checkbox");
-
-    const isCompleted = (await webview.evaluate("document.querySelector('.todo-item').classList.contains('completed')")) as boolean;
-    const countText = (await webview.evaluate("document.querySelector('#todo-count')?.textContent")) as string;
-
-    expect(isCompleted).toBe(true);
-    expect(countText).toBe("0 items left");
+    expect(result.completedCount).toBe(1);
+    expect(result.countText).toBe("2 items left");
   });
 
-  test("4. filters active and completed todos", async () => {
-    await using webview = new Bun.WebView();
-    await webview.navigate(baseUrl);
+  test("4. test view filters (Active, Completed, All)", async () => {
+    const filterResults = (await webview.evaluate(`(() => {
+      // 1. Active
+      document.querySelector('#filter-active').click();
+      const activeCount = document.querySelectorAll('.todo-item').length;
+      const activeText = document.querySelector('.todo-text')?.textContent;
 
-    // Add 2 tasks
-    await webview.click("#todo-input");
-    await webview.type("Task 1 (Active)");
-    await webview.click("#add-todo-btn");
+      // 2. Completed
+      document.querySelector('#filter-completed').click();
+      const completedCount = document.querySelectorAll('.todo-item').length;
+      const completedText = document.querySelector('.todo-text')?.textContent;
 
-    await webview.click("#todo-input");
-    await webview.type("Task 2 (Completed)");
-    await webview.click("#add-todo-btn");
+      // 3. All
+      document.querySelector('#filter-all').click();
+      const allCount = document.querySelectorAll('.todo-item').length;
 
-    // Complete Task 2
-    await webview.evaluate(`(() => {
-      const checkboxes = document.querySelectorAll(".todo-checkbox");
-      checkboxes[1].click();
-    })()`);
+      return { activeCount, activeText, completedCount, completedText, allCount };
+    })()`)) as {
+      activeCount: number;
+      activeText: string;
+      completedCount: number;
+      completedText: string;
+      allCount: number;
+    };
 
-    // Filter: Active
-    await webview.click("#filter-active");
-    const activeItems = (await webview.evaluate("document.querySelectorAll('.todo-item').length")) as number;
-    const activeText = (await webview.evaluate("document.querySelector('.todo-text')?.textContent")) as string;
-    expect(activeItems).toBe(1);
-    expect(activeText).toBe("Task 1 (Active)");
-
-    // Filter: Completed
-    await webview.click("#filter-completed");
-    const completedItems = (await webview.evaluate("document.querySelectorAll('.todo-item').length")) as number;
-    const completedText = (await webview.evaluate("document.querySelector('.todo-text')?.textContent")) as string;
-    expect(completedItems).toBe(1);
-    expect(completedText).toBe("Task 2 (Completed)");
-
-    // Filter: All
-    await webview.click("#filter-all");
-    const allItems = (await webview.evaluate("document.querySelectorAll('.todo-item').length")) as number;
-    expect(allItems).toBe(2);
+    expect(filterResults.activeCount).toBe(2);
+    expect(filterResults.activeText).toBe("Learn Bun");
+    expect(filterResults.completedCount).toBe(1);
+    expect(filterResults.completedText).toBe("Write E2E Tests");
+    expect(filterResults.allCount).toBe(3);
   });
 
-  test("5. deletes a todo item", async () => {
-    await using webview = new Bun.WebView();
-    await webview.navigate(baseUrl);
+  test("5. delete task and clear completed", async () => {
+    const finalState = (await webview.evaluate(`(() => {
+      // Delete first task ("Learn Bun")
+      document.querySelectorAll('.delete-btn')[0].click();
+      const countAfterDelete = document.querySelectorAll('.todo-item').length;
 
-    // Add a todo
-    await webview.click("#todo-input");
-    await webview.type("Task to delete");
-    await webview.click("#add-todo-btn");
+      // Clear remaining completed task
+      document.querySelector('#clear-completed-btn').click();
+      const finalCount = document.querySelectorAll('.todo-item').length;
+      const finalCountText = document.querySelector('#todo-count')?.textContent;
+      const remainingTask = document.querySelector('.todo-text')?.textContent;
 
-    const countBefore = (await webview.evaluate("document.querySelectorAll('.todo-item').length")) as number;
-    expect(countBefore).toBe(1);
+      return { countAfterDelete, finalCount, finalCountText, remainingTask };
+    })()`)) as {
+      countAfterDelete: number;
+      finalCount: number;
+      finalCountText: string;
+      remainingTask: string;
+    };
 
-    // Click delete button
-    await webview.click(".delete-btn");
-
-    const countAfter = (await webview.evaluate("document.querySelectorAll('.todo-item').length")) as number;
-    const finalCountText = (await webview.evaluate("document.querySelector('#todo-count')?.textContent")) as string;
-
-    expect(countAfter).toBe(0);
-    expect(finalCountText).toBe("0 items left");
+    expect(finalState.countAfterDelete).toBe(2);
+    expect(finalState.finalCount).toBe(1);
+    expect(finalState.finalCountText).toBe("1 item left");
+    expect(finalState.remainingTask).toBe("Deploy to Production");
   });
 });
