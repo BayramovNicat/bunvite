@@ -1,8 +1,8 @@
-export type Filter = 'all' | 'active' | 'completed';
-export type Priority = 'low' | 'medium' | 'high';
-export type ViewMode = 'inbox' | 'today' | 'calendar' | 'completed' | 'category';
+type Priority = 'low' | 'medium' | 'high';
+type ViewMode = 'inbox' | 'today' | 'calendar' | 'completed' | 'category';
+type Filter = 'all' | 'active' | 'completed';
 
-export interface Todo {
+interface Todo {
   id: string;
   text: string;
   completed: boolean;
@@ -11,7 +11,7 @@ export interface Todo {
   category?: string;
 }
 
-export interface AppState {
+interface AppState {
   todos: Todo[];
   filter: Filter;
   search: string;
@@ -94,57 +94,20 @@ const CheckCircle = /*svg*/ `<svg class="size-4 pointer-events-none" viewBox="0 
 const ChevronLeft = /*svg*/ `<svg class="size-4 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>`;
 const ChevronRight = /*svg*/ `<svg class="size-4 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>`;
 
-const root = document.querySelector('#app') as HTMLElement;
-
-root.className = 'size-full relative flex overflow-hidden';
-root.innerHTML = /*html*/ `
-  <div class="size-full bg-zinc-900/90 flex flex-col md:flex-row overflow-hidden">
-    <aside class="w-full md:w-64 shrink-0 bg-zinc-950/60 border-b md:border-b-0 md:border-r border-zinc-800/60 p-5 flex flex-col justify-between overflow-y-auto"></aside>
-    <main class="flex-1 flex flex-col justify-between overflow-hidden h-full">
-      <div class="flex-1 overflow-y-auto flex flex-col">
-        <header class="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
-          <div class="flex items-center gap-2">
-            <h1 class="text-base font-semibold text-zinc-100 tracking-tight">Tasks</h1>
-            <div class="badge-slot"></div>
-          </div>
-          <div class="flex items-center gap-2">
-            <input type="search" data-action="search" value="" placeholder="Search..." autocomplete="off" aria-label="Search tasks" class="w-28 focus:w-44 transition-all duration-150 bg-zinc-800/50 border border-zinc-700/40 rounded-lg px-2.5 py-1 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-indigo-500/50" />
-            <button type="button" data-action="toggle-all" title="Toggle all" aria-label="Toggle all tasks" class="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/80 transition-colors cursor-pointer">${CheckCheck}</button>
-          </div>
-        </header>
-        <div class="calendar-panel hidden px-6 pb-4 shrink-0"></div>
-        <div class="px-6 pb-4 shrink-0">
-          <form id="todo-form" class="space-y-2">
-            <div class="flex items-center gap-2 bg-zinc-800/60 border border-zinc-700/50 rounded-xl px-4 py-2.5 focus-within:border-indigo-500/50 focus-within:bg-zinc-800 transition-all duration-150">
-              <input id="todo-input" name="task" placeholder="Add a task... (/ to focus)" autocomplete="off" aria-label="Add a task" class="flex-1 bg-transparent text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden" />
-              <button type="submit" aria-label="Add task" title="Add task" class="text-zinc-400 hover:text-indigo-400 transition-colors cursor-pointer">${Plus}</button>
-            </div>
-            <div class="flex items-center gap-2 text-xs">
-              <input type="date" name="dueDate" value="${state.selectedDate}" aria-label="Due date" title="Due date" class="bg-zinc-800/40 border border-zinc-700/40 rounded-lg px-2 py-1 text-zinc-300 focus:outline-hidden focus:border-indigo-500/50 text-xs" />
-              <select name="category" aria-label="Task category" title="Task category" class="bg-zinc-800/40 border border-zinc-700/40 rounded-lg px-2 py-1 text-zinc-300 focus:outline-hidden focus:border-indigo-500/50 text-xs cursor-pointer">
-                ${CATEGORIES.map((c) => /*html*/ `<option value="${c}">${c}</option>`).join('')}
-              </select>
-            </div>
-          </form>
-        </div>
-        <div class="flex-1 overflow-y-auto px-6">
-          <ul class="divide-y divide-zinc-800/60 border-t border-zinc-800/60 list-none p-0 m-0"></ul>
-        </div>
-      </div>
-      <footer class="flex items-center justify-between px-6 py-3.5 border-t border-zinc-800/60 shrink-0 bg-zinc-950/20"></footer>
-    </main>
-  </div>
-  <div class="toast-slot fixed bottom-5 left-1/2 -translate-x-1/2 pointer-events-none"></div>
-`;
-
-const sidebar = root.querySelector('aside') as HTMLElement;
-const badgeSlot = root.querySelector('.badge-slot') as HTMLElement;
-const calendarPanel = root.querySelector('.calendar-panel') as HTMLElement;
-const list = root.querySelector('ul') as HTMLElement;
-const footer = root.querySelector('footer') as HTMLElement;
-const form = root.querySelector('#todo-form') as HTMLFormElement;
-const toastSlot = root.querySelector('.toast-slot') as HTMLElement;
-const searchInput = root.querySelector('input[data-action="search"]') as HTMLInputElement;
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+] as const;
 
 let undoTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -167,26 +130,6 @@ const commitEdit = (id: string | null, newText: string) => {
   state.editingId = null;
   saveTodos(state.todos);
   render();
-};
-
-const MONTH_NAMES = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-] as const;
-
-const syncDueDateInput = (date: string): void => {
-  const dateInput = form.elements.namedItem('dueDate') as HTMLInputElement | null;
-  if (dateInput) dateInput.value = date;
 };
 
 const TodoEditRow = (t: Todo): string => /*html*/ `
@@ -251,50 +194,50 @@ const renderCalendar = (): string => {
 
   for (let i = firstDay - 1; i >= 0; i--) {
     const d = prevMonthDays - i;
-    const prevM = month === 0 ? 11 : month - 1;
-    const prevY = month === 0 ? year - 1 : year;
+    const m = month === 0 ? 12 : month;
+    const y = month === 0 ? year - 1 : year;
     cells.push({
-      dateStr: `${prevY}-${String(prevM + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
+      dateStr: `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
       dayNum: d,
       isCurrentMonth: false,
     });
   }
 
-  for (let i = 1; i <= daysInMonth; i++) {
+  for (let d = 1; d <= daysInMonth; d++) {
     cells.push({
-      dateStr: `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`,
-      dayNum: i,
+      dateStr: `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
+      dayNum: d,
       isCurrentMonth: true,
     });
   }
 
-  const remaining = 7 - (cells.length % 7);
-  if (remaining < 7) {
-    for (let i = 1; i <= remaining; i++) {
-      const nextM = month === 11 ? 0 : month + 1;
-      const nextY = month === 11 ? year + 1 : year;
-      cells.push({
-        dateStr: `${nextY}-${String(nextM + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`,
-        dayNum: i,
-        isCurrentMonth: false,
-      });
-    }
+  const remaining = (7 - (cells.length % 7)) % 7;
+  for (let d = 1; d <= remaining; d++) {
+    const m = month === 11 ? 1 : month + 2;
+    const y = month === 11 ? year + 1 : year;
+    cells.push({
+      dateStr: `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
+      dayNum: d,
+      isCurrentMonth: false,
+    });
   }
 
   return /*html*/ `
-    <div class="bg-zinc-800/30 border border-zinc-700/40 rounded-xl p-3.5 space-y-3">
-      <div class="flex items-center justify-between">
+    <div class="bg-zinc-800/40 border border-zinc-700/40 rounded-xl p-3 select-none">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-xs font-semibold text-zinc-200 tracking-tight">${MONTH_NAMES[month]} ${year}</span>
         <div class="flex items-center gap-1">
-          <button type="button" data-action="prev-month" title="Previous month" aria-label="Previous month" class="size-7 flex items-center justify-center rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer">${ChevronLeft}</button>
-          <span class="text-sm font-semibold text-zinc-200 tracking-tight">${MONTH_NAMES[month]} ${year}</span>
-          <button type="button" data-action="next-month" title="Next month" aria-label="Next month" class="size-7 flex items-center justify-center rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer">${ChevronRight}</button>
+          <button type="button" data-action="prev-month" title="Previous month" aria-label="Previous month" class="p-1 rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50 transition-colors cursor-pointer">${ChevronLeft}</button>
+          <button type="button" data-action="cal-today" title="Go to today" aria-label="Go to today" class="px-2 py-0.5 rounded text-[11px] font-medium text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50 transition-colors cursor-pointer">Today</button>
+          <button type="button" data-action="next-month" title="Next month" aria-label="Next month" class="p-1 rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50 transition-colors cursor-pointer">${ChevronRight}</button>
         </div>
-        <button type="button" data-action="cal-today" aria-label="Go to today" class="text-xs px-2.5 py-1 rounded bg-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer">Today</button>
       </div>
-      <div class="grid grid-cols-7 text-center text-[11px] font-medium text-zinc-400">
-        <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
+      <div class="grid grid-cols-7 gap-0.5 text-center mb-1">
+        ${['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
+          .map((d) => /*html*/ `<span class="text-[10px] font-medium text-zinc-400 py-1">${d}</span>`)
+          .join('')}
       </div>
-      <div class="grid grid-cols-7 gap-1">
+      <div class="grid grid-cols-7 gap-0.5">
         ${cells
           .map((c) => {
             const isSelected = c.dateStr === state.selectedDate;
@@ -415,20 +358,11 @@ const renderSidebar = () => {
   `;
 };
 
-const render = () => {
-  sidebar.innerHTML = renderSidebar();
-
-  if (state.currentView === 'calendar') {
-    calendarPanel.classList.remove('hidden');
-    calendarPanel.innerHTML = renderCalendar();
-  } else {
-    calendarPanel.classList.add('hidden');
-  }
-
+const getVisibleTodos = (): Todo[] => {
   const query = state.search.toLowerCase().trim();
   const todayStr = getTodayStr();
 
-  const visible = state.todos.filter((t) => {
+  return state.todos.filter((t) => {
     if ((state.currentView === 'completed' || state.filter === 'completed') && !t.completed) return false;
     if (state.filter === 'active' && t.completed) return false;
     if (state.currentView === 'today' && t.dueDate !== todayStr) return false;
@@ -436,12 +370,16 @@ const render = () => {
     if (state.currentView === 'category' && state.selectedCategory && t.category !== state.selectedCategory) return false;
     return !query || t.text.toLowerCase().includes(query);
   });
+};
 
-  const active = state.todos.filter((t) => !t.completed).length;
-
-  badgeSlot.innerHTML = state.todos.length
+const renderBadgeContent = (): string =>
+  state.todos.length
     ? /*html*/ `<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400">${state.todos.length}</span>`
     : '';
+
+const renderListContent = (): string => {
+  const visible = getVisibleTodos();
+  const todayStr = getTodayStr();
 
   const emptyMessage = state.search
     ? 'No matching tasks'
@@ -457,13 +395,17 @@ const render = () => {
               ? 'No completed tasks'
               : 'No tasks here';
 
-  list.innerHTML = visible.length
+  return visible.length
     ? visible
         .map((t) => (state.editingId === t.id ? TodoEditRow(t) : TodoItem(t, todayStr)))
         .join('')
     : /*html*/ `<li class="list-none text-zinc-400 text-xs text-center py-8">${emptyMessage}</li>`;
+};
 
-  footer.innerHTML = /*html*/ `
+const renderFooterContent = (): string => {
+  const active = state.todos.filter((t) => !t.completed).length;
+
+  return /*html*/ `
     <span class="text-xs text-zinc-400">${active} remaining</span>
     <div class="flex items-center gap-0.5">
       ${(['all', 'active', 'completed'] as const)
@@ -476,8 +418,10 @@ const render = () => {
     </div>
     <button type="button" id="clear-btn" data-action="clear" aria-label="Clear completed tasks" class="text-xs text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer">Clear</button>
   `;
+};
 
-  toastSlot.innerHTML = state.lastDeleted
+const renderToastContent = (): string =>
+  state.lastDeleted
     ? /*html*/ `
       <div class="flex items-center gap-2.5 bg-zinc-800 border border-zinc-700/80 text-xs text-zinc-200 px-3.5 py-2 rounded-xl shadow-xl pointer-events-auto backdrop-blur-sm">
         <span>${state.lastDeleted.items.length === 1 ? 'Task deleted' : `${state.lastDeleted.items.length} tasks cleared`}</span>
@@ -485,6 +429,86 @@ const render = () => {
       </div>
     `
     : '';
+
+const root = document.querySelector('#app') as HTMLElement;
+
+root.className = 'size-full relative flex overflow-hidden';
+root.innerHTML = /*html*/ `
+  <div class="size-full bg-zinc-900/90 flex flex-col md:flex-row overflow-hidden">
+    <aside class="w-full md:w-64 shrink-0 bg-zinc-950/60 border-b md:border-b-0 md:border-r border-zinc-800/60 p-5 flex flex-col justify-between overflow-y-auto">${renderSidebar()}</aside>
+    <main class="flex-1 flex flex-col justify-between overflow-hidden h-full">
+      <div class="flex-1 overflow-y-auto flex flex-col">
+        <header class="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
+          <div class="flex items-center gap-2">
+            <h1 class="text-base font-semibold text-zinc-100 tracking-tight">Tasks</h1>
+            <div class="badge-slot">${renderBadgeContent()}</div>
+          </div>
+          <div class="flex items-center gap-2">
+            <input type="search" data-action="search" value="" placeholder="Search..." autocomplete="off" aria-label="Search tasks" class="w-28 focus:w-44 transition-all duration-150 bg-zinc-800/50 border border-zinc-700/40 rounded-lg px-2.5 py-1 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-indigo-500/50" />
+            <button type="button" data-action="toggle-all" title="Toggle all" aria-label="Toggle all tasks" class="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/80 transition-colors cursor-pointer">${CheckCheck}</button>
+          </div>
+        </header>
+        <div class="calendar-panel hidden px-6 pb-4 shrink-0"></div>
+        <div class="px-6 pb-4 shrink-0">
+          <form id="todo-form" class="space-y-2">
+            <div class="flex items-center gap-2 bg-zinc-800/60 border border-zinc-700/50 rounded-xl px-4 py-2.5 focus-within:border-indigo-500/50 focus-within:bg-zinc-800 transition-all duration-150">
+              <input id="todo-input" name="task" placeholder="Add a task... (/ to focus)" autocomplete="off" aria-label="Add a task" class="flex-1 bg-transparent text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden" />
+              <button type="submit" aria-label="Add task" title="Add task" class="text-zinc-400 hover:text-indigo-400 transition-colors cursor-pointer">${Plus}</button>
+            </div>
+            <div class="flex items-center gap-2 text-xs">
+              <input type="date" name="dueDate" value="${state.selectedDate}" aria-label="Due date" title="Due date" class="bg-zinc-800/40 border border-zinc-700/40 rounded-lg px-2 py-1 text-zinc-300 focus:outline-hidden focus:border-indigo-500/50 text-xs" />
+              <select name="category" aria-label="Task category" title="Task category" class="bg-zinc-800/40 border border-zinc-700/40 rounded-lg px-2 py-1 text-zinc-300 focus:outline-hidden focus:border-indigo-500/50 text-xs cursor-pointer">
+                ${CATEGORIES.map((c) => /*html*/ `<option value="${c}">${c}</option>`).join('')}
+              </select>
+            </div>
+          </form>
+        </div>
+        <div class="flex-1 overflow-y-auto px-6">
+          <ul class="divide-y divide-zinc-800/60 border-t border-zinc-800/60 list-none p-0 m-0">${renderListContent()}</ul>
+        </div>
+      </div>
+      <footer class="flex items-center justify-between px-6 py-3.5 border-t border-zinc-800/60 shrink-0 bg-zinc-950/20">${renderFooterContent()}</footer>
+    </main>
+  </div>
+  <div class="toast-slot fixed bottom-5 left-1/2 -translate-x-1/2 pointer-events-none">${renderToastContent()}</div>
+`;
+
+let sidebarEl: HTMLElement | null = null;
+let badgeSlotEl: HTMLElement | null = null;
+let calendarPanelEl: HTMLElement | null = null;
+let listEl: HTMLElement | null = null;
+let footerEl: HTMLElement | null = null;
+let toastSlotEl: HTMLElement | null = null;
+
+const form = root.querySelector('#todo-form') as HTMLFormElement;
+const searchInput = root.querySelector('input[data-action="search"]') as HTMLInputElement;
+
+const syncDueDateInput = (date: string): void => {
+  const dateInput = form.elements.namedItem('dueDate') as HTMLInputElement | null;
+  if (dateInput) dateInput.value = date;
+};
+
+const render = () => {
+  sidebarEl ??= root.querySelector('aside');
+  badgeSlotEl ??= root.querySelector('.badge-slot');
+  calendarPanelEl ??= root.querySelector('.calendar-panel');
+  listEl ??= root.querySelector('ul');
+  footerEl ??= root.querySelector('footer');
+  toastSlotEl ??= root.querySelector('.toast-slot');
+
+  if (sidebarEl) sidebarEl.innerHTML = renderSidebar();
+
+  if (state.currentView === 'calendar') {
+    calendarPanelEl?.classList.remove('hidden');
+    if (calendarPanelEl) calendarPanelEl.innerHTML = renderCalendar();
+  } else {
+    calendarPanelEl?.classList.add('hidden');
+  }
+
+  if (badgeSlotEl) badgeSlotEl.innerHTML = renderBadgeContent();
+  if (listEl) listEl.innerHTML = renderListContent();
+  if (footerEl) footerEl.innerHTML = renderFooterContent();
+  if (toastSlotEl) toastSlotEl.innerHTML = renderToastContent();
 
   if (state.editingId) {
     const editInput = root.querySelector<HTMLInputElement>(`input[data-edit-input="${state.editingId}"]`);
@@ -521,159 +545,6 @@ form.onsubmit = (e) => {
 searchInput.oninput = () => {
   state.search = searchInput.value;
   render();
-};
-
-let draggedId: string | null = null;
-let dropTargetId: string | null = null;
-let dropBelow = false;
-
-const clearDropIndicators = (): void => {
-  for (const el of root.querySelectorAll<HTMLElement>('.todo-item')) {
-    el.classList.remove(
-      'border-t-indigo-500',
-      'border-b-indigo-500',
-      'opacity-40',
-      'bg-zinc-800/40',
-    );
-  }
-};
-
-root.ondragstart = (e) => {
-  const target = e.target as HTMLElement;
-  if (
-    target.closest('input, button:not(.drag-handle), select') &&
-    !target.closest('.drag-handle')
-  ) {
-    e.preventDefault();
-    return;
-  }
-
-  const li = target.closest<HTMLElement>('li[data-id]');
-  if (!li || state.editingId === li.dataset.id) {
-    e.preventDefault();
-    return;
-  }
-
-  draggedId = li.dataset.id ?? null;
-  dropTargetId = null;
-  dropBelow = false;
-
-  if (e.dataTransfer) {
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', draggedId ?? '');
-  }
-
-  setTimeout(() => {
-    li.classList.add('opacity-40', 'bg-zinc-800/40');
-  }, 0);
-};
-
-root.ondragover = (e) => {
-  e.preventDefault();
-  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-
-  const targetLi = (e.target as HTMLElement).closest<HTMLElement>('li[data-id]');
-  if (!targetLi || !draggedId || targetLi.dataset.id === draggedId) {
-    for (const el of root.querySelectorAll<HTMLElement>('.todo-item')) {
-      el.classList.remove('border-t-indigo-500', 'border-b-indigo-500');
-    }
-    dropTargetId = null;
-    return;
-  }
-
-  const rect = targetLi.getBoundingClientRect();
-  const isBelow = e.clientY > rect.top + rect.height / 2;
-  const targetId = targetLi.dataset.id ?? null;
-
-  if (dropTargetId !== targetId || dropBelow !== isBelow) {
-    for (const el of root.querySelectorAll<HTMLElement>('.todo-item')) {
-      el.classList.remove('border-t-indigo-500', 'border-b-indigo-500');
-    }
-    dropTargetId = targetId;
-    dropBelow = isBelow;
-
-    if (isBelow) {
-      targetLi.classList.add('border-b-indigo-500');
-    } else {
-      targetLi.classList.add('border-t-indigo-500');
-    }
-  }
-};
-
-root.ondragleave = (e) => {
-  const related = e.relatedTarget as HTMLElement | null;
-  if (!related || !root.contains(related)) {
-    clearDropIndicators();
-    dropTargetId = null;
-  }
-};
-
-root.ondragend = () => {
-  clearDropIndicators();
-  draggedId = null;
-  dropTargetId = null;
-};
-
-root.ondrop = (e) => {
-  e.preventDefault();
-  const targetLi = (e.target as HTMLElement).closest<HTMLElement>('li[data-id]');
-  if (!targetLi || !draggedId) {
-    clearDropIndicators();
-    return;
-  }
-
-  const targetId = targetLi.dataset.id;
-  if (!targetId || targetId === draggedId) {
-    clearDropIndicators();
-    return;
-  }
-
-  const fromIndex = state.todos.findIndex((t) => t.id === draggedId);
-  const toIndex = state.todos.findIndex((t) => t.id === targetId);
-
-  if (fromIndex !== -1 && toIndex !== -1) {
-    const rect = targetLi.getBoundingClientRect();
-    const isBelow = e.clientY > rect.top + rect.height / 2;
-
-    const [moved] = state.todos.splice(fromIndex, 1);
-    let insertIndex = state.todos.findIndex((t) => t.id === targetId);
-    if (isBelow) insertIndex++;
-
-    state.todos.splice(insertIndex, 0, moved);
-    saveTodos(state.todos);
-  }
-
-  clearDropIndicators();
-  draggedId = null;
-  dropTargetId = null;
-  render();
-};
-
-root.ondblclick = (e) => {
-  const el = (e.target as HTMLElement).closest<HTMLElement>('.todo-text');
-  if (!el) return;
-  const id = el.closest<HTMLElement>('[data-id]')?.dataset.id;
-  if (!id) return;
-  state.editingId = id;
-  render();
-};
-
-root.onkeydown = (e) => {
-  const target = e.target as HTMLElement;
-  if (target.hasAttribute('data-edit-input')) {
-    const id = target.getAttribute('data-edit-input');
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      commitEdit(id, (target as HTMLInputElement).value);
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      state.editingId = null;
-      render();
-    }
-  } else if (e.key === '/' && target.tagName !== 'INPUT' && target.tagName !== 'SELECT') {
-    e.preventDefault();
-    (form.elements.namedItem('task') as HTMLInputElement).focus();
-  }
 };
 
 root.onclick = (e) => {
@@ -757,4 +628,164 @@ root.onclick = (e) => {
   render();
 };
 
-render();
+root.onkeydown = (e) => {
+  const target = e.target as HTMLElement;
+  if (target.hasAttribute('data-edit-input')) {
+    const id = target.getAttribute('data-edit-input');
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commitEdit(id, (target as HTMLInputElement).value);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      state.editingId = null;
+      render();
+    }
+  } else if (e.key === '/' && target.tagName !== 'INPUT' && target.tagName !== 'SELECT') {
+    e.preventDefault();
+    (form.elements.namedItem('task') as HTMLInputElement).focus();
+  }
+};
+
+let draggedId: string | null = null;
+let dropTargetId: string | null = null;
+let dropBelow = false;
+
+const clearDropIndicators = (): void => {
+  for (const el of root.querySelectorAll<HTMLElement>('.todo-item')) {
+    el.classList.remove(
+      'border-t-indigo-500',
+      'border-b-indigo-500',
+      'opacity-40',
+      'bg-zinc-800/40',
+    );
+  }
+};
+
+setTimeout(() => {
+  root.ondragstart = (e) => {
+    const target = e.target as HTMLElement;
+    if (
+      target.closest('input, button:not(.drag-handle), select') &&
+      !target.closest('.drag-handle')
+    ) {
+      e.preventDefault();
+      return;
+    }
+
+    const li = target.closest<HTMLElement>('li[data-id]');
+    if (!li || state.editingId === li.dataset.id) {
+      e.preventDefault();
+      return;
+    }
+
+    draggedId = li.dataset.id ?? null;
+    dropTargetId = null;
+    dropBelow = false;
+
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', draggedId ?? '');
+    }
+
+    setTimeout(() => {
+      li.classList.add('opacity-40', 'bg-zinc-800/40');
+    }, 0);
+  };
+
+  root.ondragover = (e) => {
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+
+    const targetLi = (e.target as HTMLElement).closest<HTMLElement>('li[data-id]');
+    if (!targetLi || !draggedId || targetLi.dataset.id === draggedId) {
+      for (const el of root.querySelectorAll<HTMLElement>('.todo-item')) {
+        el.classList.remove('border-t-indigo-500', 'border-b-indigo-500');
+      }
+      dropTargetId = null;
+      return;
+    }
+
+    const rect = targetLi.getBoundingClientRect();
+    const isBelow = e.clientY > rect.top + rect.height / 2;
+    const targetId = targetLi.dataset.id ?? null;
+
+    if (dropTargetId !== targetId || dropBelow !== isBelow) {
+      for (const el of root.querySelectorAll<HTMLElement>('.todo-item')) {
+        el.classList.remove('border-t-indigo-500', 'border-b-indigo-500');
+      }
+      dropTargetId = targetId;
+      dropBelow = isBelow;
+
+      if (isBelow) {
+        targetLi.classList.add('border-b-indigo-500');
+      } else {
+        targetLi.classList.add('border-t-indigo-500');
+      }
+    }
+  };
+
+  root.ondragleave = (e) => {
+    const related = e.relatedTarget as HTMLElement | null;
+    if (!related || !root.contains(related)) {
+      clearDropIndicators();
+      dropTargetId = null;
+    }
+  };
+
+  root.ondragend = () => {
+    clearDropIndicators();
+    draggedId = null;
+    dropTargetId = null;
+  };
+
+  root.ondrop = (e) => {
+    e.preventDefault();
+    const targetLi = (e.target as HTMLElement).closest<HTMLElement>('li[data-id]');
+    if (!targetLi || !draggedId) {
+      clearDropIndicators();
+      return;
+    }
+
+    const targetId = targetLi.dataset.id;
+    if (!targetId || targetId === draggedId) {
+      clearDropIndicators();
+      return;
+    }
+
+    const fromIndex = state.todos.findIndex((t) => t.id === draggedId);
+    const toIndex = state.todos.findIndex((t) => t.id === targetId);
+
+    if (fromIndex !== -1 && toIndex !== -1) {
+      const rect = targetLi.getBoundingClientRect();
+      const isBelow = e.clientY > rect.top + rect.height / 2;
+
+      const [moved] = state.todos.splice(fromIndex, 1);
+      let insertIndex = state.todos.findIndex((t) => t.id === targetId);
+      if (isBelow) insertIndex++;
+
+      state.todos.splice(insertIndex, 0, moved);
+      saveTodos(state.todos);
+    }
+
+    clearDropIndicators();
+    draggedId = null;
+    dropTargetId = null;
+    render();
+  };
+
+  root.ondblclick = (e) => {
+    const el = (e.target as HTMLElement).closest<HTMLElement>('.todo-text');
+    if (!el) return;
+    const id = el.closest<HTMLElement>('[data-id]')?.dataset.id;
+    if (!id) return;
+    state.editingId = id;
+    render();
+  };
+
+  window.onstorage = (e) => {
+    if (e.key === STORAGE_KEY) {
+      state.todos = loadSavedTodos();
+      render();
+    }
+  };
+}, 0);
