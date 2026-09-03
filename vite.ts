@@ -11,17 +11,87 @@ const CONFIG = {
 	previewPort: Number(process.env.PORT) || 4173,
 } as const;
 
-const LIVE_RELOAD_SCRIPT = `
+const HMR_CLIENT_SCRIPT = `
+<!-- BunVite HMR Client -->
 <script>
   (() => {
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
     let ws;
+    const hmrCallbacks = new Map();
+
+    window.__hmr__ = {
+      onUpdate(path, fn) {
+        const norm = path.replace(/^[./]+/, "/");
+        hmrCallbacks.set(norm, fn);
+      }
+    };
+
     const connect = () => {
-      const proto = location.protocol === "https:" ? "wss:" : "ws:";
-      ws = new WebSocket(\`\${proto}//\${location.host}/ws-reload\`);
-      ws.onmessage = (e) => {
+      ws = new WebSocket(\`\${proto}//\${location.host}/ws-hmr\`);
+      ws.onmessage = async (e) => {
         try {
-          if (JSON.parse(e.data).type === "reload") location.reload();
-        } catch (_) {}
+          const payload = JSON.parse(e.data);
+
+          // 1. Hot-swap CSS in-place without page reload
+          if (payload.type === "css-update") {
+            const links = document.querySelectorAll('link[rel="stylesheet"]');
+            for (const link of links) {
+              const url = new URL(link.href);
+              if (url.pathname === payload.path || url.pathname.endsWith(".css")) {
+                const newLink = link.cloneNode();
+                newLink.href = \`\${url.pathname}?t=\${payload.timestamp}\`;
+                newLink.onload = () => link.remove();
+                link.parentNode?.insertBefore(newLink, link.nextSibling);
+              }
+            }
+          }
+
+          // 2. Hot-swap JS/TS module with state retention
+          if (payload.type === "js-update") {
+            const normPath = payload.path.replace(/^[./]+/, "/");
+            const mountEl = document.getElementById("app");
+            const prevInput = mountEl ? mountEl.querySelector("#todo-input") : null;
+            const inputState = prevInput ? {
+              value: prevInput.value,
+              wasFocused: document.activeElement === prevInput,
+              start: prevInput.selectionStart,
+              end: prevInput.selectionEnd
+            } : null;
+
+            const prevApp = window.app;
+            const prevState = prevApp && typeof prevApp.getState === "function" ? prevApp.getState() : null;
+            if (prevApp && typeof prevApp.destroy === "function") prevApp.destroy();
+
+            try {
+              const newMod = await import(\`\${normPath}?t=\${payload.timestamp}\`);
+              if (mountEl && typeof newMod.createApp === "function") {
+                window.app = newMod.createApp(mountEl, prevState || undefined);
+
+                if (inputState && inputState.value) {
+                  const newInput = mountEl.querySelector("#todo-input");
+                  if (newInput) {
+                    newInput.value = inputState.value;
+                    if (inputState.wasFocused) {
+                      newInput.focus();
+                      if (inputState.start !== null && inputState.end !== null) {
+                        newInput.setSelectionRange(inputState.start, inputState.end);
+                      }
+                    }
+                  }
+                }
+              }
+            } catch (err) {
+              console.error("[HMR] Error applying module update:", err);
+            }
+          }
+
+          // 3. Explicit full page reload
+          if (payload.type === "full-reload") {
+            location.reload();
+          }
+        } catch (err) {
+          console.error("[HMR] Failed to process message:", err);
+        }
       };
       ws.onclose = () => setTimeout(connect, 1000);
     };
@@ -75,7 +145,6 @@ async function compileTypeScript(filePath: string, force = false): Promise<strin
 }
 
 function invalidateAssetCache(file?: string) {
-	// Any changed file (.ts, .html, .css) might introduce new Tailwind utility classes
 	cachedCss = null;
 	if (!file || file.endsWith(".ts") || file.endsWith(".js")) {
 		cachedJs.clear();
@@ -91,29 +160,61 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
 		let debounceTimer: Timer | null = null;
 
 		try {
-			watch(CONFIG.root, { recursive: true }, (_evt, file) => {
+			watch(CONFIG.root, { recursive: true }, (_evt, rawFile) => {
 				if (
-					!file ||
-					file.startsWith("node_modules") ||
-					file.startsWith("dist") ||
-					file.startsWith(".git")
+					!rawFile ||
+					rawFile.startsWith("node_modules") ||
+					rawFile.startsWith("dist") ||
+					rawFile.startsWith(".git")
 				) {
 					return;
 				}
 
-				invalidateAssetCache(file);
+				invalidateAssetCache(rawFile);
 
 				if (debounceTimer) clearTimeout(debounceTimer);
 				debounceTimer = setTimeout(async () => {
-					// Precompile updated Tailwind CSS before notifying browser
+					const timestamp = Date.now();
+					const file = rawFile.replace(/^[./]+/, "");
+
+					// HTML edits require full page reload
+					if (file.endsWith(".html")) {
+						for (const socket of activeSockets) {
+							try {
+								socket.send(JSON.stringify({ type: "full-reload" }));
+							} catch (_) {}
+						}
+						return;
+					}
+
+					// Recompile Tailwind in memory
 					await compileTailwind(true);
 
+					// Broadcast HMR updates
 					for (const socket of activeSockets) {
 						try {
-							socket.send(JSON.stringify({ type: "reload" }));
+							// Always send CSS update so new styles apply instantly
+							socket.send(
+								JSON.stringify({
+									type: "css-update",
+									path: "/src/style.css",
+									timestamp,
+								}),
+							);
+
+							// If JS/TS file changed, send module update
+							if (file.endsWith(".ts") || file.endsWith(".js")) {
+								socket.send(
+									JSON.stringify({
+										type: "js-update",
+										path: `/${file}`,
+										timestamp,
+									}),
+								);
+							}
 						} catch (_) {}
 					}
-				}, 50);
+				}, 40);
 			});
 		} catch (_) {}
 	}
@@ -133,7 +234,7 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
 			const url = new URL(req.url);
 			const pathname = url.pathname;
 
-			if (pathname === "/ws-reload") {
+			if (pathname === "/ws-hmr" || pathname === "/ws-reload") {
 				if (server.upgrade(req, { data: undefined })) return undefined;
 				return new Response("Upgrade failed", { status: 400 });
 			}
@@ -143,7 +244,7 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
 				let html = await indexFile.text();
 
 				if (enableLiveReload) {
-					html = html.replace("</body>", `${LIVE_RELOAD_SCRIPT}</body>`);
+					html = html.replace("</body>", `${HMR_CLIENT_SCRIPT}</body>`);
 				}
 
 				return new Response(html, {
@@ -265,7 +366,7 @@ const cmd = process.argv[2] || "dev";
 if (import.meta.main) {
 	if (cmd === "dev") {
 		const server = createDevServer(CONFIG.devPort, true);
-		console.log(`\n  ⚡ Dev server running at http://localhost:${server.port}/\n`);
+		console.log(`\n  ⚡ BunVite HMR dev server running at http://localhost:${server.port}/\n`);
 	} else if (cmd === "build") {
 		buildProduction();
 	} else if (cmd === "preview") {

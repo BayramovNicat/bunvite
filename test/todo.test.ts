@@ -117,4 +117,17 @@ describe("BunVite Dev Engine & Todo App E2E Suite", () => {
 		expect(finalState.countAfterDelete).toBe(2);
 		expect(finalState.finalCount).toBe(0);
 	});
+
+	test("7. verify app state interface", async () => {
+		const appStatus = (await webview.evaluate(`(() => {
+      const app = window.app;
+      return {
+        hasState: typeof app?.getState === "function",
+        hasDispatch: typeof app?.dispatch === "function"
+      };
+    })()`)) as { hasState: boolean; hasDispatch: boolean };
+
+		expect(appStatus.hasState).toBe(true);
+		expect(appStatus.hasDispatch).toBe(true);
+	});
 });
