@@ -38,10 +38,14 @@ async function compileTailwind(force = false): Promise<string> {
 		return cachedCss.code;
 	}
 
-	const proc = Bun.spawn(["bun", "x", "@tailwindcss/cli", "-i", join(CONFIG.srcDir, "style.css")], {
-		stdout: "pipe",
-		stderr: "pipe",
-	});
+	const proc = Bun.spawn(
+		["bun", "x", "@tailwindcss/cli", "-i", join(CONFIG.srcDir, "style.css"), "--cwd", CONFIG.root],
+		{
+			cwd: CONFIG.root,
+			stdout: "pipe",
+			stderr: "pipe",
+		},
+	);
 
 	const code = await new Response(proc.stdout).text();
 	cachedCss = { code, timestamp: Date.now() };
@@ -71,8 +75,11 @@ async function compileTypeScript(filePath: string, force = false): Promise<strin
 }
 
 function invalidateAssetCache(file?: string) {
-	if (!file || file.endsWith(".css")) cachedCss = null;
-	if (!file || file.endsWith(".ts") || file.endsWith(".js")) cachedJs.clear();
+	// Any changed file (.ts, .html, .css) might introduce new Tailwind utility classes
+	cachedCss = null;
+	if (!file || file.endsWith(".ts") || file.endsWith(".js")) {
+		cachedJs.clear();
+	}
 }
 
 export function createDevServer(port = CONFIG.devPort, enableLiveReload = true): Server<unknown> {
@@ -97,13 +104,16 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
 				invalidateAssetCache(file);
 
 				if (debounceTimer) clearTimeout(debounceTimer);
-				debounceTimer = setTimeout(() => {
+				debounceTimer = setTimeout(async () => {
+					// Precompile updated Tailwind CSS before notifying browser
+					await compileTailwind(true);
+
 					for (const socket of activeSockets) {
 						try {
 							socket.send(JSON.stringify({ type: "reload" }));
 						} catch (_) {}
 					}
-				}, 40);
+				}, 50);
 			});
 		} catch (_) {}
 	}
@@ -137,14 +147,20 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
 				}
 
 				return new Response(html, {
-					headers: { "Content-Type": "text/html; charset=utf-8" },
+					headers: {
+						"Content-Type": "text/html; charset=utf-8",
+						"Cache-Control": "no-cache, no-store, must-revalidate",
+					},
 				});
 			}
 
 			if (pathname === "/src/style.css" || pathname.endsWith(".css")) {
 				const css = await compileTailwind();
 				return new Response(css, {
-					headers: { "Content-Type": "text/css; charset=utf-8" },
+					headers: {
+						"Content-Type": "text/css; charset=utf-8",
+						"Cache-Control": "no-cache, no-store, must-revalidate",
+					},
 				});
 			}
 
@@ -156,12 +172,11 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
 					return new Response(js, {
 						headers: {
 							"Content-Type": "application/javascript; charset=utf-8",
+							"Cache-Control": "no-cache, no-store, must-revalidate",
 						},
 					});
 				}
-				return new Response("// Error compiling module", {
-					status: 500,
-				});
+				return new Response("// Error compiling module", { status: 500 });
 			}
 
 			const staticFile = bunFile(join(CONFIG.root, pathname.replace(/^\//, "")));
@@ -208,8 +223,10 @@ async function buildProduction() {
 			"-o",
 			cssPath,
 			"--minify",
+			"--cwd",
+			CONFIG.root,
 		],
-		{ stdout: "inherit", stderr: "inherit" },
+		{ stdout: "inherit", stderr: "inherit", cwd: CONFIG.root },
 	);
 	await twProc.exited;
 
