@@ -161,7 +161,7 @@ const TodoItem = (t: Todo, todayStr: string): string => {
 
   return /*html*/ `
     <li class="todo-item group list-none flex items-center gap-3 px-5 py-3.5 hover:bg-white/2 transition-colors cursor-grab active:cursor-grabbing border-y-2 border-transparent" data-id="${t.id}" draggable="true">
-      <span class="drag-handle opacity-0 group-hover:opacity-40 hover:!opacity-100 text-zinc-400 shrink-0 select-none cursor-grab active:cursor-grabbing transition-opacity">${Grip}</span>
+      <span class="drag-handle opacity-0 group-hover:opacity-40 hover:opacity-100! text-zinc-400 shrink-0 select-none cursor-grab active:cursor-grabbing transition-opacity">${Grip}</span>
       <button type="button" data-action="toggle" aria-label="${t.completed ? 'Mark task as incomplete' : 'Mark task as complete'}" title="${t.completed ? 'Mark incomplete' : 'Mark complete'}" class="shrink-0 size-4.5 rounded-full border transition-all cursor-pointer flex items-center justify-center ${t.completed ? 'bg-indigo-500 border-indigo-500' : 'border-zinc-600 hover:border-zinc-400 bg-transparent'}">
         ${t.completed ? Check : ''}
       </button>

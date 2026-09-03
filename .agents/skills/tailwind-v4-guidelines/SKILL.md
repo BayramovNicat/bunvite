@@ -8,16 +8,16 @@ description: >-
 
 # Complete Tailwind CSS v4 Class & Migration Reference
 
-This skill provides an exhaustive mapping of **all Tailwind CSS v4 syntax, utility renames, sizing conventions, and modern CSS-first rules**. It prevents outdated Tailwind v3 patterns and arbitrary bracket anti-patterns from being used in any component or template.
+This skill provides an exhaustive mapping of all Tailwind CSS v4 syntax, utility renames, sizing conventions, and modern CSS-first rules. It prevents outdated Tailwind v3 patterns and arbitrary bracket anti-patterns from being used in any component or template.
 
 ---
 
-## 1. Complete Utility Class Renames (v3 ➔ v4)
+## 1. Complete Utility Class Renames (v3 to v4)
 
-### 🌈 Gradients & Color Interpolation
-Linear gradients in v4 match the standard CSS `linear-gradient()` naming convention:
+### Gradients & Color Interpolation
+Linear gradients in v4 match standard CSS `linear-gradient()` naming:
 
-| ❌ Legacy / Deprecated (v3) | ✅ Modern Canonical (v4) | CSS Output / Notes |
+| Deprecated (v3) | Canonical (v4) | CSS Output / Notes |
 | :--- | :--- | :--- |
 | `bg-gradient-to-r` | `bg-linear-to-r` | `linear-gradient(to right, ...)` |
 | `bg-gradient-to-l` | `bg-linear-to-l` | `linear-gradient(to left, ...)` |
@@ -34,12 +34,12 @@ Linear gradients in v4 match the standard CSS `linear-gradient()` naming convent
 
 ---
 
-### 📏 Sizing, Dimensions & Pixels (`w-*`, `h-*`, `size-*`, `max-w-*`)
+### Sizing, Dimensions & Pixels (`w-*`, `h-*`, `size-*`, `max-w-*`)
 
-In Tailwind CSS v4, the spacing scale is **continuous and infinite**, derived directly from `--spacing: 0.25rem` (`4px`).
+In Tailwind CSS v4, the spacing scale is continuous and infinite, derived directly from `--spacing: 0.25rem` (`4px`).
 
-#### ⚡ The Global Pixel-to-Scale Law
-Before ever writing an arbitrary pixel bracket (`[...px]`), apply this universal formula:
+#### The Global Pixel-to-Scale Law
+Before writing an arbitrary pixel bracket (`[...px]`), apply this universal formula:
 
 $$\text{Scale Token } N = \frac{\text{Target Pixels}}{4}$$
 
@@ -59,7 +59,7 @@ $$\text{Scale Token } N = \frac{\text{Target Pixels}}{4}$$
    * Value is an odd pixel integer (e.g. `[3px]`, `[7px]`, `[13px]`) or non-quarter subpixel (`[12.5px]`).
    * For 1px, always use the dedicated keyword: `size-px`, `w-px`, `h-px`.
 
-| Use Case | ❌ Banned Arbitrary Bracket | ✅ Universal Canonical (v4) | Global Derivation |
+| Use Case | Banned Arbitrary Bracket | Canonical (v4) | Global Derivation |
 | :--- | :--- | :--- | :--- |
 | **Any width divisible by 4px** | `max-w-[360px]`, `w-[360px]` | `max-w-90`, `w-90` | $360 / 4 = 90$ |
 | **Any width divisible by 4px** | `max-w-[320px]`, `w-[320px]` | `max-w-80`, `w-80` | $320 / 4 = 80$ |
@@ -75,10 +75,10 @@ $$\text{Scale Token } N = \frac{\text{Target Pixels}}{4}$$
 
 ---
 
-### 🎨 Opacity & Color Slash Notation
-Tailwind v4 supports **bare percentage values** without brackets for fine-grained opacities. Never use bracketed decimals like `/[0.02]` or legacy `*-opacity-*` helpers.
+### Opacity & Color Slash Notation
+Tailwind v4 supports bare percentage values without brackets for fine-grained opacities. Never use bracketed decimals like `/[0.02]` or legacy `*-opacity-*` helpers.
 
-| ❌ Anti-pattern / Deprecated | ✅ Modern Canonical (v4) | Notes / Meaning |
+| Anti-pattern / Deprecated | Canonical (v4) | Notes / Meaning |
 | :--- | :--- | :--- |
 | `hover:bg-white/[0.02]` | `hover:bg-white/2` | Bare percentage: 2% opacity |
 | `bg-white/[0.05]`, `bg-white/5` | `bg-white/5` | 5% opacity |
@@ -94,10 +94,24 @@ Tailwind v4 supports **bare percentage values** without brackets for fine-graine
 
 ---
 
-### 🔤 Text Wrapping & Word Breaking
+### Important Modifier (!)
+In Tailwind v4, the `!` modifier can be placed at the **end** of the utility name instead of the beginning. While both forms work in v4, placing `!` at the end matches CSS `!important` and improves readability across variant chains:
+
+| Legacy / v3 Syntax | Canonical v4 Syntax | CSS Output |
+| :--- | :--- | :--- |
+| `!opacity-100` | `opacity-100!` | `opacity: 1 !important;` |
+| `hover:!opacity-100` | `hover:opacity-100!` | `:hover { opacity: 1 !important; }` |
+| `!hidden` | `hidden!` | `display: none !important;` |
+| `!block` | `block!` | `display: block !important;` |
+| `!bg-red-500` | `bg-red-500!` | `background-color: ... !important;` |
+| `focus:!ring-2` | `focus:ring-2!` | `:focus { ... !important; }` |
+
+---
+
+### Text Wrapping & Word Breaking
 Tailwind v4 cleanly separates `overflow-wrap` and `word-break`:
 
-| ❌ Legacy / Ambiguous (v3) | ✅ Modern Canonical (v4) | CSS Property |
+| Legacy / Ambiguous (v3) | Canonical (v4) | CSS Property |
 | :--- | :--- | :--- |
 | `break-words` | `wrap-break-word` | `overflow-wrap: break-word` |
 | `break-words` *(anywhere)* | `wrap-anywhere` | `overflow-wrap: anywhere` |
@@ -107,9 +121,9 @@ Tailwind v4 cleanly separates `overflow-wrap` and `word-break`:
 
 ---
 
-### 📐 Flexbox, Grid & Layout
+### Flexbox, Grid & Layout
 
-| ❌ Legacy (v3) | ✅ Modern Canonical (v4) | Notes |
+| Legacy (v3) | Canonical (v4) | Notes |
 | :--- | :--- | :--- |
 | `flex-grow` | `grow` | `flex-grow: 1` |
 | `flex-grow-0` | `grow-0` | `flex-grow: 0` |
@@ -121,9 +135,9 @@ Tailwind v4 cleanly separates `overflow-wrap` and `word-break`:
 
 ---
 
-### 🎯 Outlines, Focus & Rings
+### Outlines, Focus & Rings
 
-| ❌ Legacy (v3) | ✅ Modern Canonical (v4) | Notes |
+| Legacy (v3) | Canonical (v4) | Notes |
 | :--- | :--- | :--- |
 | `outline-none` *(hiding focus)* | `outline-hidden` / `focus:outline-hidden` | Hides default browser focus outline (`outline: 2px solid transparent;`) |
 | `outline-none` *(in v4)* | `outline-none` | Sets `outline-style: none` |
@@ -132,7 +146,7 @@ Tailwind v4 cleanly separates `overflow-wrap` and `word-break`:
 
 ---
 
-### 📦 Sizing Scale Shift (Shadows, Radii, Blurs)
+### Sizing Scale Shift (Shadows, Radii, Blurs)
 Tailwind v4 adjusted default scales to ensure consistent named values:
 
 | v3 Utility | v4 Equivalent | Notes |
@@ -146,7 +160,7 @@ Tailwind v4 adjusted default scales to ensure consistent named values:
 
 ---
 
-### 🔄 3D Transforms (New in v4)
+### 3D Transforms (New in v4)
 Tailwind v4 includes native 3D transform utilities:
 * `transform-3d`, `transform-flat`
 * `rotate-x-*`, `rotate-y-*`, `rotate-z-*`
@@ -189,3 +203,4 @@ When generating or editing Tailwind classes, ensure:
 7. **Outlines:** `outline-hidden` / `focus:outline-hidden` used to suppress default outlines.
 8. **Colors/Opacity:** Slash notation (`bg-rose-500/20`) used instead of separate opacity classes.
 9. **Viewport Heights:** `h-dvh` preferred over `h-screen` for mobile resilience.
+10. **Important Modifier:** Use trailing exclamation mark (`hover:opacity-100!`, `hidden!`) instead of legacy prefix syntax (`hover:!opacity-100`, `!hidden`).
