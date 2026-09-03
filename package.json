@@ -1,13 +1,24 @@
 {
-  "name": "bun-native-todo-app",
-  "version": "1.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "bun run --watch src/server.ts",
-    "start": "bun run src/server.ts",
-    "test": "bun test"
-  },
-  "devDependencies": {
-    "@types/bun": "^1.4.0"
-  }
+	"name": "bun-native-todo-app",
+	"version": "1.0.0",
+	"type": "module",
+	"scripts": {
+		"dev": "bun run vite.ts dev",
+		"build": "bun run vite.ts build",
+		"preview": "bun run vite.ts preview",
+		"test": "bun test --parallel",
+		"lint": "biome check .",
+		"format": "biome format --write .",
+		"check:types": "tsc --noEmit",
+		"check:lint": "biome check .",
+		"check:test": "bun test --parallel",
+		"check": "bun run --parallel \"check:*\""
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.5.11",
+		"@tailwindcss/cli": "^4.3.3",
+		"@types/bun": "^1.4.0",
+		"tailwindcss": "^4.3.3",
+		"typescript": "^7.0.2"
+	}
 }
