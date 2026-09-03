@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Native Bun Todo App</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Bun Todos</h1>
+      <p class="subtitle">Built with Bun native HTTP and tested with Bun.WebView</p>
+    </header>
+
+    <main class="card">
+      <form id="todo-form" class="input-group" onsubmit="event.preventDefault(); addTodo();">
+        <input type="text" id="todo-input" placeholder="What needs to be done?" autofocus autocomplete="off" />
+        <button type="submit" id="add-todo-btn">Add</button>
+      </form>
+
+      <ul id="todo-list" class="todo-list"></ul>
+      <div id="empty-state" class="empty-state">No tasks yet. Add one above!</div>
+
+      <div class="footer">
+        <span id="todo-count">0 items left</span>
+        <div class="filters">
+          <button id="filter-all" class="filter-btn active" onclick="setFilter('all')">All</button>
+          <button id="filter-active" class="filter-btn" onclick="setFilter('active')">Active</button>
+          <button id="filter-completed" class="filter-btn" onclick="setFilter('completed')">Completed</button>
+        </div>
+        <button id="clear-completed-btn" class="clear-btn" onclick="clearCompleted()">Clear completed</button>
+      </div>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
