@@ -54,7 +54,6 @@ describe("BunVite Dev Engine & Todo App E2E Suite", () => {
 
 	test("3. toggle task completion via circle button", async () => {
 		const result = (await webview.evaluate(`(() => {
-      // Click the circle toggle button (not the text) for the 2nd task
       const toggleBtns = document.querySelectorAll('button[data-action="toggle"]');
       toggleBtns[1].click();
       return {
@@ -67,7 +66,6 @@ describe("BunVite Dev Engine & Todo App E2E Suite", () => {
 
 	test("4. toggle via text click", async () => {
 		const result = (await webview.evaluate(`(() => {
-      // Click text of the 3rd task to complete it
       const texts = document.querySelectorAll('.todo-text');
       texts[2].click();
       return {
@@ -99,14 +97,12 @@ describe("BunVite Dev Engine & Todo App E2E Suite", () => {
 
 	test("6. delete task and clear completed", async () => {
 		const finalState = (await webview.evaluate(`(() => {
-      // Delete first task "Learn Bun" (active)
       const firstItem = document.querySelector('.todo-item');
       const deleteBtn = firstItem.querySelector('[data-action="delete"]');
       deleteBtn.style.opacity = '1';
       deleteBtn.click();
       const countAfterDelete = document.querySelectorAll('.todo-item').length;
 
-      // Clear the 2 completed tasks
       document.querySelector('#clear-btn').click();
       const finalCount = document.querySelectorAll('.todo-item').length;
       const remainingTask = document.querySelector('.todo-text')?.textContent?.trim();

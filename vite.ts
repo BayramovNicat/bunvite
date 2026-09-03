@@ -12,7 +12,6 @@ const CONFIG = {
 } as const;
 
 const HMR_CLIENT_SCRIPT = `
-<!-- BunVite HMR Client -->
 <script>
   (() => {
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -32,7 +31,6 @@ const HMR_CLIENT_SCRIPT = `
         try {
           const payload = JSON.parse(e.data);
 
-          // 1. Hot-swap CSS in-place without page reload
           if (payload.type === "css-update") {
             const links = document.querySelectorAll('link[rel="stylesheet"]');
             for (const link of links) {
@@ -46,7 +44,6 @@ const HMR_CLIENT_SCRIPT = `
             }
           }
 
-          // 2. Hot-swap JS/TS module with state retention
           if (payload.type === "js-update") {
             const normPath = payload.path.replace(/^[./]+/, "/");
             const mountEl = document.getElementById("app");
@@ -85,7 +82,6 @@ const HMR_CLIENT_SCRIPT = `
             }
           }
 
-          // 3. Explicit full page reload
           if (payload.type === "full-reload") {
             location.reload();
           }
@@ -177,7 +173,6 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
 					const timestamp = Date.now();
 					const file = rawFile.replace(/^[./]+/, "");
 
-					// HTML edits require full page reload
 					if (file.endsWith(".html")) {
 						for (const socket of activeSockets) {
 							try {
@@ -187,13 +182,10 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
 						return;
 					}
 
-					// Recompile Tailwind in memory
 					await compileTailwind(true);
 
-					// Broadcast HMR updates
 					for (const socket of activeSockets) {
 						try {
-							// Always send CSS update so new styles apply instantly
 							socket.send(
 								JSON.stringify({
 									type: "css-update",
@@ -202,7 +194,6 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
 								}),
 							);
 
-							// If JS/TS file changed, send module update
 							if (file.endsWith(".ts") || file.endsWith(".js")) {
 								socket.send(
 									JSON.stringify({
@@ -277,7 +268,7 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
 						},
 					});
 				}
-				return new Response("// Error compiling module", { status: 500 });
+				return new Response("Error compiling module", { status: 500 });
 			}
 
 			const staticFile = bunFile(join(CONFIG.root, pathname.replace(/^\//, "")));
