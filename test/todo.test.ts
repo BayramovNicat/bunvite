@@ -3,22 +3,22 @@ import type { Server } from "bun";
 import { createDevServer } from "../vite";
 
 describe("BunVite Dev Engine & Todo App E2E Suite", () => {
-	let server: Server<unknown>;
-	let webview: Bun.WebView;
+  let server: Server<unknown>;
+  let webview: Bun.WebView;
 
-	beforeAll(async () => {
-		server = createDevServer(0, false);
-		webview = new Bun.WebView();
-		await webview.navigate(`http://localhost:${server.port}`);
-	});
+  beforeAll(async () => {
+    server = createDevServer(0, false);
+    webview = new Bun.WebView();
+    await webview.navigate(`http://localhost:${server.port}`);
+  });
 
-	afterAll(async () => {
-		await webview.close();
-		server.stop(true);
-	});
+  afterAll(async () => {
+    await webview.close();
+    server.stop(true);
+  });
 
-	test("1. verify initial page state", async () => {
-		const state = (await webview.evaluate(`(async () => {
+  test("1. verify initial page state", async () => {
+    const state = (await webview.evaluate(`(async () => {
       while (!document.querySelector('h1')) {
         await new Promise(r => setTimeout(r, 10));
       }
@@ -29,13 +29,13 @@ describe("BunVite Dev Engine & Todo App E2E Suite", () => {
       };
     })()`)) as { title: string; header: string; itemsCount: number };
 
-		expect(state.title).toBe("Tasks");
-		expect(state.header).toBe("Tasks");
-		expect(state.itemsCount).toBe(0);
-	});
+    expect(state.title).toBe("Tasks");
+    expect(state.header).toBe("Tasks");
+    expect(state.itemsCount).toBe(0);
+  });
 
-	test("2. batch-add tasks and verify live DOM", async () => {
-		const result = (await webview.evaluate(`(() => {
+  test("2. batch-add tasks and verify live DOM", async () => {
+    const result = (await webview.evaluate(`(() => {
       const input = document.querySelector('#todo-input');
       const form = document.querySelector('#todo-form');
       ["Learn Bun", "Write E2E Tests", "Deploy to Production"].forEach(task => {
@@ -48,12 +48,12 @@ describe("BunVite Dev Engine & Todo App E2E Suite", () => {
       };
     })()`)) as { itemsCount: number; itemTexts: string[] };
 
-		expect(result.itemsCount).toBe(3);
-		expect(result.itemTexts).toEqual(["Learn Bun", "Write E2E Tests", "Deploy to Production"]);
-	});
+    expect(result.itemsCount).toBe(3);
+    expect(result.itemTexts).toEqual(["Learn Bun", "Write E2E Tests", "Deploy to Production"]);
+  });
 
-	test("3. toggle task completion via circle button", async () => {
-		const result = (await webview.evaluate(`(() => {
+  test("3. toggle task completion via circle button", async () => {
+    const result = (await webview.evaluate(`(() => {
       const toggleBtns = document.querySelectorAll('button[data-action="toggle"]');
       toggleBtns[1].click();
       return {
@@ -61,11 +61,11 @@ describe("BunVite Dev Engine & Todo App E2E Suite", () => {
       };
     })()`)) as { completedCount: number };
 
-		expect(result.completedCount).toBe(1);
-	});
+    expect(result.completedCount).toBe(1);
+  });
 
-	test("4. toggle via text click", async () => {
-		const result = (await webview.evaluate(`(() => {
+  test("4. toggle via text click", async () => {
+    const result = (await webview.evaluate(`(() => {
       const texts = document.querySelectorAll('.todo-text');
       texts[2].click();
       return {
@@ -73,11 +73,11 @@ describe("BunVite Dev Engine & Todo App E2E Suite", () => {
       };
     })()`)) as { completedCount: number };
 
-		expect(result.completedCount).toBe(2);
-	});
+    expect(result.completedCount).toBe(2);
+  });
 
-	test("5. test view filters", async () => {
-		const results = (await webview.evaluate(`(() => {
+  test("5. test view filters", async () => {
+    const results = (await webview.evaluate(`(() => {
       document.querySelector('[data-filter="active"]').click();
       const activeCount = document.querySelectorAll('.todo-item').length;
 
@@ -90,13 +90,13 @@ describe("BunVite Dev Engine & Todo App E2E Suite", () => {
       return { activeCount, completedCount, allCount };
     })()`)) as { activeCount: number; completedCount: number; allCount: number };
 
-		expect(results.activeCount).toBe(1);
-		expect(results.completedCount).toBe(2);
-		expect(results.allCount).toBe(3);
-	});
+    expect(results.activeCount).toBe(1);
+    expect(results.completedCount).toBe(2);
+    expect(results.allCount).toBe(3);
+  });
 
-	test("6. delete task and clear completed", async () => {
-		const finalState = (await webview.evaluate(`(() => {
+  test("6. delete task and clear completed", async () => {
+    const finalState = (await webview.evaluate(`(() => {
       const firstItem = document.querySelector('.todo-item');
       const deleteBtn = firstItem.querySelector('[data-action="delete"]');
       deleteBtn.style.opacity = '1';
@@ -110,7 +110,7 @@ describe("BunVite Dev Engine & Todo App E2E Suite", () => {
       return { countAfterDelete, finalCount, remainingTask };
     })()`)) as { countAfterDelete: number; finalCount: number; remainingTask: string };
 
-		expect(finalState.countAfterDelete).toBe(2);
-		expect(finalState.finalCount).toBe(0);
-	});
+    expect(finalState.countAfterDelete).toBe(2);
+    expect(finalState.finalCount).toBe(0);
+  });
 });

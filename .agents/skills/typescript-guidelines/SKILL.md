@@ -216,4 +216,5 @@ When writing or reviewing TypeScript code:
 3. [ ] **No ID Clutter:** Are container divs free of arbitrary `id=` attributes? Are semantic tags used?
 4. [ ] **Tooling Directives:** Are all HTML/SVG template literals tagged with `/*html*/` and `/*svg*/`?
 5. [ ] **Clean Delegation:** Is event handling routed through a single flat `.closest("[data-action]")` listener?
-6. [ ] **Clean Teardown:** Is `AbortController` used with `{ signal }` for listener lifecycle management?
+6. [ ] **Self-Replacing Handlers:** Are single-listener root handlers assigned directly (`form.onsubmit = ...`, `root.onclick = ...`) to prevent duplicate listener accumulation on reload?
+7. [ ] **2-Space Indentation:** Are all files, template literals, and configs formatted with 2 spaces (matching Angular, Svelte, and modern frontend conventions)?
