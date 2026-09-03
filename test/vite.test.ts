@@ -10,7 +10,7 @@ import {
   previewProduction,
 } from '../vite';
 
-describe('BunVite Core Engine & Parity Features 1-by-1 Suite', () => {
+describe('dev server', () => {
   let devServer: Server<unknown>;
   let devBase: string;
 
@@ -23,7 +23,7 @@ describe('BunVite Core Engine & Parity Features 1-by-1 Suite', () => {
     devServer.stop(true);
   });
 
-  test('1. HMR client script is injected before </body> in HTML', async () => {
+  test('injects HMR runtime into HTML', async () => {
     const res = await fetch(`${devBase}/`);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('text/html');
@@ -34,7 +34,15 @@ describe('BunVite Core Engine & Parity Features 1-by-1 Suite', () => {
     expect(html.indexOf('ws-hmr')).toBeLessThan(html.indexOf('</body>'));
   });
 
-  test('2. Tailwind CSS compiles and serves at /src/style.css with no-cache headers', async () => {
+  test('serves /index.html with HMR injection', async () => {
+    const res = await fetch(`${devBase}/index.html`);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('ws-hmr');
+    expect(html).toContain('<div id="app"></div>');
+  });
+
+  test('compiles and serves Tailwind CSS', async () => {
     const res = await fetch(`${devBase}/src/style.css`);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('text/css');
@@ -43,7 +51,7 @@ describe('BunVite Core Engine & Parity Features 1-by-1 Suite', () => {
     expect(css.length).toBeGreaterThan(0);
   });
 
-  test('3. TypeScript files compile on-the-fly with __hmr_state__ transform', async () => {
+  test('compiles TypeScript with HMR state transform', async () => {
     const res = await fetch(`${devBase}/src/app.ts`);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('application/javascript');
@@ -51,14 +59,14 @@ describe('BunVite Core Engine & Parity Features 1-by-1 Suite', () => {
     expect(js).toContain('window.__hmr_state__ ??=');
   });
 
-  test('4. public/ folder serves static assets root-relative', async () => {
+  test('serves static assets from public/', async () => {
     const res = await fetch(`${devBase}/robots.txt`);
     expect(res.status).toBe(200);
     const content = await res.text();
     expect(content).toContain('User-agent: *');
   });
 
-  test('5. SPA fallback serves index.html for unknown paths with Accept: text/html', async () => {
+  test('falls back to index.html for SPA routes', async () => {
     const res = await fetch(`${devBase}/dashboard/tasks/42`, {
       headers: { Accept: 'text/html,application/xhtml+xml' },
     });
@@ -69,17 +77,15 @@ describe('BunVite Core Engine & Parity Features 1-by-1 Suite', () => {
     expect(html).toContain('ws-hmr');
   });
 
-  test('6. Non-HTML requests to missing files return 404', async () => {
+  test('returns 404 for missing non-HTML assets', async () => {
     const res = await fetch(`${devBase}/missing-image.png`, {
       headers: { Accept: 'image/png' },
     });
     expect(res.status).toBe(404);
   });
 
-  test('7. WebSocket connects cleanly to /ws-hmr', async () => {
-    const wsUrl = `ws://localhost:${devServer.port}/ws-hmr`;
-    const ws = new WebSocket(wsUrl);
-
+  test('accepts WebSocket connections at /ws-hmr', async () => {
+    const ws = new WebSocket(`ws://localhost:${devServer.port}/ws-hmr`);
     const connected = await new Promise<boolean>((resolve) => {
       ws.onopen = () => {
         ws.close();
@@ -87,14 +93,15 @@ describe('BunVite Core Engine & Parity Features 1-by-1 Suite', () => {
       };
       ws.onerror = () => resolve(false);
     });
-
     expect(connected).toBe(true);
   });
 
-  test('8. TypeScript compilation errors broadcast build-error via WebSocket', async () => {
+  test('broadcasts build error on syntax failure', async () => {
     const badFilePath = join(CONFIG.srcDir, 'temp-syntax-error.ts');
-    const wsUrl = `ws://localhost:${devServer.port}/ws-hmr`;
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(`ws://localhost:${devServer.port}/ws-hmr`);
+
+    const origError = console.error;
+    console.error = () => {};
 
     try {
       await new Promise<void>((resolve) => {
@@ -105,9 +112,7 @@ describe('BunVite Core Engine & Parity Features 1-by-1 Suite', () => {
         ws.onmessage = (e) => {
           try {
             const data = JSON.parse(String(e.data));
-            if (data.type === 'build-error') {
-              resolve(data);
-            }
+            if (data.type === 'build-error') resolve(data);
           } catch (_) {}
         };
       });
@@ -127,6 +132,7 @@ describe('BunVite Core Engine & Parity Features 1-by-1 Suite', () => {
       expect(msg.type).toBe('build-error');
       expect(msg.message.length).toBeGreaterThan(0);
     } finally {
+      console.error = origError;
       ws.close();
       await Bun.file(badFilePath)
         .delete()
@@ -134,14 +140,28 @@ describe('BunVite Core Engine & Parity Features 1-by-1 Suite', () => {
     }
   });
 
-  test('9. getNetworkUrl returns valid URL format or null', () => {
+  test('resolves local network IPv4 address', () => {
     const url = getNetworkUrl(5173);
     if (url !== null) {
       expect(url).toMatch(/^http:\/\/\d+\.\d+\.\d+\.\d+:5173\/$/);
     }
   });
 
-  test('10. production build cleans dist, copies public/, and writes hashed assets', async () => {
+  test('omits HMR client when live reload is disabled', async () => {
+    const staticServer = createDevServer(0, false);
+    try {
+      const res = await fetch(`http://localhost:${staticServer.port}/`);
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).not.toContain('ws-hmr');
+    } finally {
+      staticServer.stop(true);
+    }
+  });
+});
+
+describe('production build & preview', () => {
+  test('cleans dist, copies public/, and writes hashed assets', async () => {
     await buildProduction();
 
     const distIndex = bunFile(join(CONFIG.distDir, 'index.html'));
@@ -154,7 +174,24 @@ describe('BunVite Core Engine & Parity Features 1-by-1 Suite', () => {
     expect(await distRobots.exists()).toBe(true);
   });
 
-  test('11. preview server serves index.html and applies immutable caching on /assets/*', async () => {
+  test('minifies production JS and CSS bundles', async () => {
+    const distIndex = bunFile(join(CONFIG.distDir, 'index.html'));
+    const html = await distIndex.text();
+
+    const jsMatch = html.match(/\/assets\/(app\.[a-z0-9]+\.js)/);
+    expect(jsMatch).not.toBeNull();
+    const jsContent = await bunFile(join(CONFIG.distDir, 'assets', jsMatch?.[1] ?? '')).text();
+    expect(jsContent.length).toBeGreaterThan(0);
+    expect(jsContent).not.toContain('/*html*/');
+
+    const cssMatch = html.match(/\/assets\/(style\.[a-z0-9]+\.css)/);
+    expect(cssMatch).not.toBeNull();
+    const cssContent = await bunFile(join(CONFIG.distDir, 'assets', cssMatch?.[1] ?? '')).text();
+    expect(cssContent.length).toBeGreaterThan(0);
+    expect(cssContent.includes('\n\n')).toBe(false);
+  });
+
+  test('serves preview with immutable asset caching', async () => {
     const previewServer = previewProduction(0);
     const previewBase = `http://localhost:${previewServer.port}`;
 
@@ -179,7 +216,19 @@ describe('BunVite Core Engine & Parity Features 1-by-1 Suite', () => {
     }
   });
 
-  test('12. formatBuildError formats multiple errors with distinct codeframes and dividers', () => {
+  test('returns 404 for missing preview files', async () => {
+    const previewServer = previewProduction(0);
+    try {
+      const res = await fetch(`http://localhost:${previewServer.port}/missing-file.txt`);
+      expect(res.status).toBe(404);
+    } finally {
+      previewServer.stop(true);
+    }
+  });
+});
+
+describe('error overlay & HMR runtime', () => {
+  test('formats multiple compiler errors with codeframes', () => {
     const mockError = {
       errors: [
         {
@@ -212,7 +261,7 @@ describe('BunVite Core Engine & Parity Features 1-by-1 Suite', () => {
     expect(formatted).toContain('^');
   });
 
-  test('13. formatBuildError falls back gracefully when positions are missing', () => {
+  test('falls back gracefully when error positions are missing', () => {
     const fallback = formatBuildError(new Error('Generic bundler failure'));
     expect(fallback).toBe('Generic bundler failure');
 
@@ -220,78 +269,42 @@ describe('BunVite Core Engine & Parity Features 1-by-1 Suite', () => {
     expect(nonErrorFallback).toBe('Unexpected string error');
   });
 
-  test('14. requesting /index.html directly serves HTML with injected HMR script', async () => {
-    const res = await fetch(`${devBase}/index.html`);
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    expect(html).toContain('ws-hmr');
-    expect(html).toContain('<div id="app"></div>');
-  });
-
-  test('15. production build assets are minified and free of multi-line comments', async () => {
-    const distIndex = bunFile(join(CONFIG.distDir, 'index.html'));
-    const html = await distIndex.text();
-
-    const jsMatch = html.match(/\/assets\/(app\.[a-z0-9]+\.js)/);
-    expect(jsMatch).not.toBeNull();
-    const jsContent = await bunFile(join(CONFIG.distDir, 'assets', jsMatch?.[1] ?? '')).text();
-    expect(jsContent.length).toBeGreaterThan(0);
-    expect(jsContent).not.toContain('/*html*/');
-
-    const cssMatch = html.match(/\/assets\/(style\.[a-z0-9]+\.css)/);
-    expect(cssMatch).not.toBeNull();
-    const cssContent = await bunFile(join(CONFIG.distDir, 'assets', cssMatch?.[1] ?? '')).text();
-    expect(cssContent.length).toBeGreaterThan(0);
-    expect(cssContent.includes('\n\n')).toBe(false);
-  });
-
-  test('16. preview server returns 404 for nonexistent files', async () => {
-    const previewServer = previewProduction(0);
-    const previewBase = `http://localhost:${previewServer.port}`;
-
+  test('includes Escape and backdrop dismissal in overlay', async () => {
+    const devServer = createDevServer(0, true);
     try {
-      const res = await fetch(`${previewBase}/missing-file.txt`);
-      expect(res.status).toBe(404);
+      const res = await fetch(`http://localhost:${devServer.port}/`);
+      const html = await res.text();
+      expect(html).toContain('e.key === "Escape"');
+      expect(html).toContain('e.target === overlay');
     } finally {
-      previewServer.stop(true);
+      devServer.stop(true);
     }
   });
 
-  test('17. HMR client script defines Escape key listener and backdrop dismissal', async () => {
-    const res = await fetch(`${devBase}/`);
-    const html = await res.text();
-    expect(html).toContain('e.key === "Escape"');
-    expect(html).toContain('e.target === overlay');
-  });
-
-  test('18. HMR client script defines CSS link hot-swap clone logic', async () => {
-    const res = await fetch(`${devBase}/`);
-    const html = await res.text();
-    expect(html).toContain('link.cloneNode()');
-    expect(html).toContain('newLink.onload = () => link.remove()');
-    expect(html).toContain('payload.timestamp');
-  });
-
-  test('19. HMR client script defines active input focus and selection range preservation', async () => {
-    const res = await fetch(`${devBase}/`);
-    const html = await res.text();
-    expect(html).toContain('#todo-input');
-    expect(html).toContain('prevInput.selectionStart');
-    expect(html).toContain('prevInput.selectionEnd');
-    expect(html).toContain('newInput.setSelectionRange');
-  });
-
-  test('20. dev server with enableLiveReload=false omits HMR client script', async () => {
-    const staticDevServer = createDevServer(0, false);
-    const staticBase = `http://localhost:${staticDevServer.port}`;
-
+  test('includes stylesheet hot-swap logic', async () => {
+    const devServer = createDevServer(0, true);
     try {
-      const res = await fetch(`${staticBase}/`);
-      expect(res.status).toBe(200);
+      const res = await fetch(`http://localhost:${devServer.port}/`);
       const html = await res.text();
-      expect(html).not.toContain('ws-hmr');
+      expect(html).toContain('link.cloneNode()');
+      expect(html).toContain('newLink.onload = () => link.remove()');
+      expect(html).toContain('payload.timestamp');
     } finally {
-      staticDevServer.stop(true);
+      devServer.stop(true);
+    }
+  });
+
+  test('preserves active input state across module reload', async () => {
+    const devServer = createDevServer(0, true);
+    try {
+      const res = await fetch(`http://localhost:${devServer.port}/`);
+      const html = await res.text();
+      expect(html).toContain('#todo-input');
+      expect(html).toContain('prevInput.selectionStart');
+      expect(html).toContain('prevInput.selectionEnd');
+      expect(html).toContain('newInput.setSelectionRange');
+    } finally {
+      devServer.stop(true);
     }
   });
 });

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { Server } from 'bun';
 import { createDevServer } from '../vite';
 
-describe('BunVite Dev Engine & Todo App E2E Suite', () => {
+describe('todo app', () => {
   let server: Server<unknown>;
   let webview: Bun.WebView;
 
@@ -17,7 +17,7 @@ describe('BunVite Dev Engine & Todo App E2E Suite', () => {
     server.stop(true);
   });
 
-  test('1. verify initial page state', async () => {
+  test('renders initial empty state', async () => {
     const state = (await webview.evaluate(`(async () => {
       while (!document.querySelector('h1')) {
         await new Promise(r => setTimeout(r, 10));
@@ -34,7 +34,7 @@ describe('BunVite Dev Engine & Todo App E2E Suite', () => {
     expect(state.itemsCount).toBe(0);
   });
 
-  test('2. batch-add tasks and verify live DOM', async () => {
+  test('adds tasks via form', async () => {
     const result = (await webview.evaluate(`(() => {
       const input = document.querySelector('#todo-input');
       const form = document.querySelector('#todo-form');
@@ -52,7 +52,7 @@ describe('BunVite Dev Engine & Todo App E2E Suite', () => {
     expect(result.itemTexts).toEqual(['Learn Bun', 'Write E2E Tests', 'Deploy to Production']);
   });
 
-  test('3. toggle task completion via circle button', async () => {
+  test('toggles task completion', async () => {
     const result = (await webview.evaluate(`(() => {
       const toggleBtns = document.querySelectorAll('button[data-action="toggle"]');
       toggleBtns[1].click();
@@ -64,7 +64,7 @@ describe('BunVite Dev Engine & Todo App E2E Suite', () => {
     expect(result.completedCount).toBe(1);
   });
 
-  test('4. toggle via text click', async () => {
+  test('toggles completion on text click', async () => {
     const result = (await webview.evaluate(`(() => {
       const texts = document.querySelectorAll('.todo-text');
       texts[2].click();
@@ -76,7 +76,7 @@ describe('BunVite Dev Engine & Todo App E2E Suite', () => {
     expect(result.completedCount).toBe(2);
   });
 
-  test('5. test view filters', async () => {
+  test('filters by active and completed', async () => {
     const results = (await webview.evaluate(`(() => {
       document.querySelector('[data-filter="active"]').click();
       const activeCount = document.querySelectorAll('.todo-item').length;
@@ -95,7 +95,7 @@ describe('BunVite Dev Engine & Todo App E2E Suite', () => {
     expect(results.allCount).toBe(3);
   });
 
-  test('6. delete task and clear completed', async () => {
+  test('deletes task and clears completed', async () => {
     const finalState = (await webview.evaluate(`(() => {
       const firstItem = document.querySelector('.todo-item');
       const deleteBtn = firstItem.querySelector('[data-action="delete"]');
@@ -114,7 +114,7 @@ describe('BunVite Dev Engine & Todo App E2E Suite', () => {
     expect(finalState.finalCount).toBe(0);
   });
 
-  test('7. reject empty and whitespace tasks without adding items', async () => {
+  test('rejects empty and whitespace inputs', async () => {
     const result = (await webview.evaluate(`(() => {
       const input = document.querySelector('#todo-input');
       const form = document.querySelector('#todo-form');
@@ -134,7 +134,7 @@ describe('BunVite Dev Engine & Todo App E2E Suite', () => {
     expect(result.countAfter).toBe(0);
   });
 
-  test('8. verify counter badge and remaining count text', async () => {
+  test('updates badge and remaining count', async () => {
     const counts = (await webview.evaluate(`(() => {
       const input = document.querySelector('#todo-input');
       const form = document.querySelector('#todo-form');
