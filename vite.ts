@@ -1,11 +1,13 @@
 import { watch } from "node:fs";
-import { mkdir, rm } from "node:fs/promises";
+import { cp, mkdir, rm } from "node:fs/promises";
+import { networkInterfaces } from "node:os";
 import { basename, join } from "node:path";
 import { file as bunFile, type Server, type ServerWebSocket, serve } from "bun";
 
-const CONFIG = {
+export const CONFIG = {
   root: import.meta.dir,
   srcDir: join(import.meta.dir, "src"),
+  publicDir: join(import.meta.dir, "public"),
   distDir: join(import.meta.dir, "dist"),
   devPort: Number(process.env.PORT) || 5173,
   previewPort: Number(process.env.PORT) || 4173,
@@ -16,6 +18,7 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
   (() => {
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     let ws;
+    let overlay = null;
     const hmrCallbacks = new Map();
 
     window.__hmr__ = {
@@ -25,11 +28,34 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
       }
     };
 
+    const dismissOverlay = () => {
+      if (overlay) { overlay.remove(); overlay = null; }
+    };
+
+    const showOverlay = (message) => {
+      dismissOverlay();
+      overlay = document.createElement("div");
+      overlay.setAttribute("style", "position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.92);display:flex;align-items:center;justify-content:center;padding:2rem;cursor:pointer");
+      overlay.onclick = dismissOverlay;
+      const pre = document.createElement("pre");
+      pre.setAttribute("style", "color:#ef4444;font-family:ui-monospace,monospace;font-size:14px;max-width:80ch;white-space:pre-wrap;word-break:break-word");
+      pre.textContent = message;
+      overlay.appendChild(pre);
+      document.body.appendChild(overlay);
+    };
+
     const connect = () => {
       ws = new WebSocket(\`\${proto}//\${location.host}/ws-hmr\`);
       ws.onmessage = async (e) => {
         try {
           const payload = JSON.parse(e.data);
+
+          if (payload.type === "build-error") {
+            showOverlay(payload.message);
+            return;
+          }
+
+          dismissOverlay();
 
           if (payload.type === "css-update") {
             const links = document.querySelectorAll('link[rel="stylesheet"]');
@@ -111,27 +137,40 @@ async function compileTailwind(force = false): Promise<string> {
   return code;
 }
 
-async function compileTypeScript(filePath: string, force = false): Promise<string | null> {
+async function compileTypeScript(
+  filePath: string,
+  force = false,
+): Promise<{ code: string } | { error: string }> {
   if (!force && cachedJs.has(filePath)) {
-    return cachedJs.get(filePath)?.code ?? null;
+    return { code: cachedJs.get(filePath)?.code ?? "" };
   }
 
-  const build = await Bun.build({
-    entrypoints: [filePath],
-    target: "browser",
-    sourcemap: "inline",
-    minify: false,
-  });
+  try {
+    const build = await Bun.build({
+      entrypoints: [filePath],
+      target: "browser",
+      sourcemap: "inline",
+      minify: false,
+    });
 
-  if (!build.success || build.outputs.length === 0) {
-    console.error("❌ Build error:", build.logs);
-    return null;
+    if (!build.success || build.outputs.length === 0) {
+      const error = build.logs.map((l) => l.message ?? String(l)).join("\n");
+      console.error("❌ Build error:", error);
+      return { error: error || "Build failed" };
+    }
+
+    let code = await build.outputs[0].text();
+    code = code.replace(
+      /(?:const|let|var) state = (\{[^;]+\});/,
+      "var state = (window.__hmr_state__ ??= $1);",
+    );
+    cachedJs.set(filePath, { code, timestamp: Date.now() });
+    return { code };
+  } catch (err: unknown) {
+    const error = err instanceof Error ? err.message : String(err);
+    console.error("❌ Build error:", error);
+    return { error };
   }
-
-  let code = await build.outputs[0].text();
-  code = code.replace(/const state = (\{[^;]+\});/, "const state = (window.__hmr_state__ ??= $1);");
-  cachedJs.set(filePath, { code, timestamp: Date.now() });
-  return code;
 }
 
 function invalidateAssetCache(file?: string) {
@@ -252,17 +291,28 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
 
       if (pathname.endsWith(".ts") || pathname.endsWith(".js")) {
         const filePath = join(CONFIG.root, pathname.replace(/^\//, ""));
-        const js = await compileTypeScript(filePath);
+        const result = await compileTypeScript(filePath);
 
-        if (js !== null) {
-          return new Response(js, {
-            headers: {
-              "Content-Type": "application/javascript; charset=utf-8",
-              "Cache-Control": "no-cache, no-store, must-revalidate",
-            },
-          });
+        if ("error" in result) {
+          for (const socket of activeSockets) {
+            try {
+              socket.send(JSON.stringify({ type: "build-error", message: result.error }));
+            } catch (_) {}
+          }
+          return new Response(result.error, { status: 500 });
         }
-        return new Response("Error compiling module", { status: 500 });
+
+        return new Response(result.code, {
+          headers: {
+            "Content-Type": "application/javascript; charset=utf-8",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+          },
+        });
+      }
+
+      const publicFile = bunFile(join(CONFIG.publicDir, pathname.replace(/^\//, "")));
+      if (await publicFile.exists()) {
+        return new Response(publicFile);
       }
 
       const staticFile = bunFile(join(CONFIG.root, pathname.replace(/^\//, "")));
@@ -270,18 +320,34 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
         return new Response(staticFile);
       }
 
+      if (req.headers.get("accept")?.includes("text/html")) {
+        const indexFile = bunFile(join(CONFIG.root, "index.html"));
+        let html = await indexFile.text();
+        if (enableLiveReload) {
+          html = html.replace("</body>", `${HMR_CLIENT_SCRIPT}</body>`);
+        }
+        return new Response(html, {
+          headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+          },
+        });
+      }
+
       return new Response("Not Found", { status: 404 });
     },
   });
 }
 
-async function buildProduction() {
+export async function buildProduction() {
   console.log("🚀 Starting production build...\n");
   const start = performance.now();
   const assetsDir = join(CONFIG.distDir, "assets");
 
   await rm(CONFIG.distDir, { recursive: true, force: true });
   await mkdir(assetsDir, { recursive: true });
+
+  await cp(CONFIG.publicDir, CONFIG.distDir, { recursive: true }).catch(() => {});
 
   const jsBuild = await Bun.build({
     entrypoints: [join(CONFIG.srcDir, "app.ts")],
@@ -328,7 +394,7 @@ async function buildProduction() {
   console.log(`📂 Output: dist/\n`);
 }
 
-function previewProduction(port = CONFIG.previewPort) {
+export function previewProduction(port = CONFIG.previewPort): Server<unknown> {
   const server = serve({
     port,
     async fetch(req) {
@@ -338,21 +404,39 @@ function previewProduction(port = CONFIG.previewPort) {
 
       const file = bunFile(join(CONFIG.distDir, path));
       if (await file.exists()) {
-        return new Response(file);
+        const headers: Record<string, string> = {};
+        if (path.startsWith("/assets/")) {
+          headers["Cache-Control"] = "public, max-age=31536000, immutable";
+        }
+        return new Response(file, { headers });
       }
       return new Response("Not Found", { status: 404 });
     },
   });
 
   console.log(`🔍 Serving production build at http://localhost:${server.port}`);
+  return server;
 }
 
 const cmd = process.argv[2] || "dev";
 
+export function getNetworkUrl(port: number): string | null {
+  for (const addrs of Object.values(networkInterfaces())) {
+    const match = addrs?.find((a) => a.family === "IPv4" && !a.internal);
+    if (match) return `http://${match.address}:${port}/`;
+  }
+  return null;
+}
+
 if (import.meta.main) {
   if (cmd === "dev") {
     const server = createDevServer(CONFIG.devPort, true);
-    console.log(`\n  ⚡ BunVite HMR dev server running at http://localhost:${server.port}/\n`);
+    const port = server.port ?? CONFIG.devPort;
+    const networkUrl = getNetworkUrl(port);
+    console.log(`\n  ⚡ BunVite dev server running at:`);
+    console.log(`     Local:   http://localhost:${port}/`);
+    if (networkUrl) console.log(`     Network: ${networkUrl}`);
+    console.log();
   } else if (cmd === "build") {
     buildProduction();
   } else if (cmd === "preview") {
