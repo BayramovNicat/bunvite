@@ -174,7 +174,7 @@ interface BuildErrorLike {
   }>;
 }
 
-function formatBuildError(err: unknown): string {
+export function formatBuildError(err: unknown): string {
   const e = err as BuildErrorLike;
   if (Array.isArray(e?.errors) && e.errors.length > 0) {
     return e.errors
@@ -275,9 +275,12 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
 
           let compileError: string | null = null;
           if (file.startsWith("src/") && (file.endsWith(".ts") || file.endsWith(".js"))) {
-            const compileResult = await compileTypeScript(join(CONFIG.root, file), true);
-            if ("error" in compileResult) {
-              compileError = compileResult.error;
+            const targetPath = join(CONFIG.root, file);
+            if (await bunFile(targetPath).exists()) {
+              const compileResult = await compileTypeScript(targetPath, true);
+              if ("error" in compileResult) {
+                compileError = compileResult.error;
+              }
             }
           }
 

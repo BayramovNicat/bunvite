@@ -113,4 +113,44 @@ describe("BunVite Dev Engine & Todo App E2E Suite", () => {
     expect(finalState.countAfterDelete).toBe(2);
     expect(finalState.finalCount).toBe(0);
   });
+
+  test("7. reject empty and whitespace tasks without adding items", async () => {
+    const result = (await webview.evaluate(`(() => {
+      const input = document.querySelector('#todo-input');
+      const form = document.querySelector('#todo-form');
+      const countBefore = document.querySelectorAll('.todo-item').length;
+
+      input.value = "   ";
+      form.dispatchEvent(new Event('submit', { cancelable: true }));
+
+      input.value = "";
+      form.dispatchEvent(new Event('submit', { cancelable: true }));
+
+      const countAfter = document.querySelectorAll('.todo-item').length;
+      return { countBefore, countAfter };
+    })()`)) as { countBefore: number; countAfter: number };
+
+    expect(result.countBefore).toBe(0);
+    expect(result.countAfter).toBe(0);
+  });
+
+  test("8. verify counter badge and remaining count text", async () => {
+    const counts = (await webview.evaluate(`(() => {
+      const input = document.querySelector('#todo-input');
+      const form = document.querySelector('#todo-form');
+
+      input.value = "Task One";
+      form.dispatchEvent(new Event('submit', { cancelable: true }));
+      input.value = "Task Two";
+      form.dispatchEvent(new Event('submit', { cancelable: true }));
+
+      const badge = document.querySelector('header span')?.textContent?.trim();
+      const remaining = document.querySelector('footer span')?.textContent?.trim();
+
+      return { badge, remaining };
+    })()`)) as { badge: string; remaining: string };
+
+    expect(counts.badge).toBe("2");
+    expect(counts.remaining).toBe("2 remaining");
+  });
 });
