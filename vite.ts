@@ -38,23 +38,17 @@ async function compileTailwind(force = false): Promise<string> {
 		return cachedCss.code;
 	}
 
-	const proc = Bun.spawn(
-		["bun", "x", "@tailwindcss/cli", "-i", join(CONFIG.srcDir, "style.css")],
-		{
-			stdout: "pipe",
-			stderr: "pipe",
-		},
-	);
+	const proc = Bun.spawn(["bun", "x", "@tailwindcss/cli", "-i", join(CONFIG.srcDir, "style.css")], {
+		stdout: "pipe",
+		stderr: "pipe",
+	});
 
 	const code = await new Response(proc.stdout).text();
 	cachedCss = { code, timestamp: Date.now() };
 	return code;
 }
 
-async function compileTypeScript(
-	filePath: string,
-	force = false,
-): Promise<string | null> {
+async function compileTypeScript(filePath: string, force = false): Promise<string | null> {
 	if (!force && cachedJs.has(filePath)) {
 		return cachedJs.get(filePath)?.code ?? null;
 	}
@@ -81,10 +75,7 @@ function invalidateAssetCache(file?: string) {
 	if (!file || file.endsWith(".ts") || file.endsWith(".js")) cachedJs.clear();
 }
 
-export function createDevServer(
-	port = CONFIG.devPort,
-	enableLiveReload = true,
-): Server<unknown> {
+export function createDevServer(port = CONFIG.devPort, enableLiveReload = true): Server<unknown> {
 	const activeSockets = new Set<ServerWebSocket<unknown>>();
 
 	compileTailwind();
@@ -168,12 +159,12 @@ export function createDevServer(
 						},
 					});
 				}
-				return new Response("// Error compiling module", { status: 500 });
+				return new Response("// Error compiling module", {
+					status: 500,
+				});
 			}
 
-			const staticFile = bunFile(
-				join(CONFIG.root, pathname.replace(/^\//, "")),
-			);
+			const staticFile = bunFile(join(CONFIG.root, pathname.replace(/^\//, "")));
 			if (await staticFile.exists()) {
 				return new Response(staticFile);
 			}
@@ -257,16 +248,12 @@ const cmd = process.argv[2] || "dev";
 if (import.meta.main) {
 	if (cmd === "dev") {
 		const server = createDevServer(CONFIG.devPort, true);
-		console.log(
-			`\n  ⚡ Dev server running at http://localhost:${server.port}/\n`,
-		);
+		console.log(`\n  ⚡ Dev server running at http://localhost:${server.port}/\n`);
 	} else if (cmd === "build") {
 		buildProduction();
 	} else if (cmd === "preview") {
 		previewProduction(CONFIG.previewPort);
 	} else {
-		console.log(
-			`Unknown command: "${cmd}". Usage: bun vite.ts [dev|build|preview]`,
-		);
+		console.log(`Unknown command: "${cmd}". Usage: bun vite.ts [dev|build|preview]`);
 	}
 }

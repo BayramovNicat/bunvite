@@ -35,9 +35,7 @@ export const addTodo = (state: AppState, text: string): AppState => {
 
 export const toggleTodo = (state: AppState, id: string): AppState => ({
 	...state,
-	todos: state.todos.map((t) =>
-		t.id === id ? { ...t, completed: !t.completed } : t,
-	),
+	todos: state.todos.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t)),
 });
 
 export const deleteTodo = (state: AppState, id: string): AppState => ({
@@ -55,10 +53,7 @@ export const setFilter = (state: AppState, filter: Filter): AppState => ({
 	filter,
 });
 
-export const getFilteredTodos = (
-	todos: readonly Todo[],
-	filter: Filter,
-): readonly Todo[] => {
+export const getFilteredTodos = (todos: readonly Todo[], filter: Filter): readonly Todo[] => {
 	if (filter === "active") return todos.filter((t) => !t.completed);
 	if (filter === "completed") return todos.filter((t) => t.completed);
 	return todos;
@@ -141,10 +136,7 @@ const Footer = (activeCount: number, currentFilter: Filter) => {
   `;
 };
 
-export const createApp = (
-	root: HTMLElement,
-	initialState = createInitialState(),
-) => {
+export const createApp = (root: HTMLElement, initialState = createInitialState()) => {
 	let state = initialState;
 
 	root.className = "w-full max-w-lg";
@@ -174,9 +166,7 @@ export const createApp = (
 
 	const inputEl = root.querySelector("#todo-input") as HTMLInputElement;
 	const formEl = root.querySelector("#todo-form") as HTMLFormElement;
-	const listContainer = root.querySelector(
-		"#todo-list-container",
-	) as HTMLDivElement;
+	const listContainer = root.querySelector("#todo-list-container") as HTMLDivElement;
 	const footerContainer = root.querySelector("#todo-footer") as HTMLElement;
 
 	const render = () => {
@@ -243,7 +233,6 @@ export const createApp = (
 if (typeof document !== "undefined") {
 	const mountEl = document.getElementById("app");
 	if (mountEl) {
-		(window as unknown as { app: ReturnType<typeof createApp> }).app =
-			createApp(mountEl);
+		(window as unknown as { app: ReturnType<typeof createApp> }).app = createApp(mountEl);
 	}
 }

@@ -71,11 +71,7 @@ describe("BunVite Dev Engine & Todo App E2E Suite", () => {
 
 		expect(result.itemsCount).toBe(3);
 		expect(result.countText).toBe("3 items left");
-		expect(result.itemTexts).toEqual([
-			"Learn Bun",
-			"Write E2E Tests",
-			"Deploy to Production",
-		]);
+		expect(result.itemTexts).toEqual(["Learn Bun", "Write E2E Tests", "Deploy to Production"]);
 	});
 
 	test("3. toggle task completion", async () => {
