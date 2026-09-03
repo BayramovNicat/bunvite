@@ -55,24 +55,17 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
               end: prevInput.selectionEnd
             } : null;
 
-            const prevApp = window.app;
-            const prevState = prevApp && typeof prevApp.getState === "function" ? prevApp.getState() : null;
-            if (prevApp && typeof prevApp.destroy === "function") prevApp.destroy();
-
             try {
-              const newMod = await import(\`\${normPath}?t=\${payload.timestamp}\`);
-              if (mountEl && typeof newMod.createApp === "function") {
-                window.app = newMod.createApp(mountEl, prevState || undefined);
+              await import(\`\${normPath}?t=\${payload.timestamp}\`);
 
-                if (inputState && inputState.value) {
-                  const newInput = mountEl.querySelector("#todo-input");
-                  if (newInput) {
-                    newInput.value = inputState.value;
-                    if (inputState.wasFocused) {
-                      newInput.focus();
-                      if (inputState.start !== null && inputState.end !== null) {
-                        newInput.setSelectionRange(inputState.start, inputState.end);
-                      }
+              if (inputState && inputState.value) {
+                const newInput = mountEl?.querySelector("#todo-input");
+                if (newInput) {
+                  newInput.value = inputState.value;
+                  if (inputState.wasFocused) {
+                    newInput.focus();
+                    if (inputState.start !== null && inputState.end !== null) {
+                      newInput.setSelectionRange(inputState.start, inputState.end);
                     }
                   }
                 }

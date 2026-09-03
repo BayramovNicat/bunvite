@@ -22,6 +22,8 @@ This skill defines the architectural standards for writing clean, ultra-minimal,
 3. **Zero Boilerplate:**
    * If a value does not need a function wrapper, make it a constant.
    * If a state update and render pass can be unified, do not decouple them into artificial layers.
+4. **Direct Entry Mounting:**
+   * Query the mount root (`const root = document.querySelector("#app");`) at the top and run application logic directly. Avoid unnecessary `function createApp()` wrapper ceremonies and defensive SSR checks in client-only entry scripts.
 
 ---
 
@@ -59,18 +61,19 @@ const text = input.value.trim();
 const text = (form.elements.namedItem("task") as HTMLInputElement).value.trim();
 ```
 
-### 3. Leak-Free Teardown with `AbortController`
-Pass `{ signal }` to all event listeners so the entire component or view unbinds cleanly in a single `controller.abort()` call:
+### 3. Native Property Handlers (`onsubmit`, `onclick`)
+For root event delegation and forms, assigning directly to property handlers (`form.onsubmit = ...`, `root.onclick = ...`) automatically overwrites any previous handler on code reload, preventing duplicate listener buildup without needing `AbortController`:
 
 ```typescript
-const controller = new AbortController();
-const { signal } = controller;
+// ✅ Minimal & Self-Replacing:
+form.onsubmit = (e) => {
+	e.preventDefault();
+	...
+};
 
-form.addEventListener("submit", handleSubmit, { signal });
-root.addEventListener("click", handleClick, { signal });
-
-return {
-	destroy: () => controller.abort(),
+root.onclick = (e) => {
+	const el = (e.target as HTMLElement).closest("[data-action]");
+	...
 };
 ```
 

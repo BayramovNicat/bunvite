@@ -15,9 +15,10 @@ const Check = /*svg*/ `<svg class="size-3 pointer-events-none" viewBox="0 0 12 1
 const Trash = /*svg*/ `<svg class="size-3 pointer-events-none" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="1" y1="1" x2="11" y2="11"/><line x1="11" y1="1" x2="11"/></svg>`;
 const Plus = /*svg*/ `<svg class="size-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="2" x2="8" y2="14"/><line x1="2" y1="8" x2="14" y2="8"/></svg>`;
 
-export const createApp = (root: HTMLElement, initialState?: AppState) => {
-	const state: AppState = initialState ?? { todos: [], filter: "all" };
-	const controller = new AbortController();
+const root = document.querySelector("#app") as HTMLElement;
+
+if (root) {
+	const state: AppState = { todos: [], filter: "all" };
 
 	root.className = "w-full max-w-90";
 	root.innerHTML = /*html*/ `
@@ -83,57 +84,31 @@ export const createApp = (root: HTMLElement, initialState?: AppState) => {
 		`;
 	};
 
-	form.addEventListener(
-		"submit",
-		(e) => {
-			e.preventDefault();
-			const text = (form.elements.namedItem("task") as HTMLInputElement).value.trim();
-			if (!text) return;
-			state.todos.push({ id: crypto.randomUUID(), text, completed: false });
-			form.reset();
-			render();
-		},
-		{ signal: controller.signal },
-	);
+	form.onsubmit = (e) => {
+		e.preventDefault();
+		const text = (form.elements.namedItem("task") as HTMLInputElement).value.trim();
+		if (!text) return;
+		state.todos.push({ id: crypto.randomUUID(), text, completed: false });
+		form.reset();
+		render();
+	};
 
-	root.addEventListener(
-		"click",
-		(e) => {
-			const el = (e.target as HTMLElement).closest<HTMLElement>("[data-action], [data-filter]");
-			if (!el) return;
+	root.onclick = (e) => {
+		const el = (e.target as HTMLElement).closest<HTMLElement>("[data-action], [data-filter]");
+		if (!el) return;
 
-			const { action, filter } = el.dataset;
-			const id = el.closest<HTMLElement>("[data-id]")?.dataset.id;
-			const item = state.todos.find((t) => t.id === id);
+		const { action, filter } = el.dataset;
+		const id = el.closest<HTMLElement>("[data-id]")?.dataset.id;
+		const item = state.todos.find((t) => t.id === id);
 
-			if (filter) state.filter = filter as Filter;
-			else if (action === "clear") state.todos = state.todos.filter((t) => !t.completed);
-			else if (action === "toggle" && item) item.completed = !item.completed;
-			else if (action === "delete" && id) state.todos = state.todos.filter((t) => t.id !== id);
-			else return;
+		if (filter) state.filter = filter as Filter;
+		else if (action === "clear") state.todos = state.todos.filter((t) => !t.completed);
+		else if (action === "toggle" && item) item.completed = !item.completed;
+		else if (action === "delete" && id) state.todos = state.todos.filter((t) => t.id !== id);
+		else return;
 
-			render();
-		},
-		{ signal: controller.signal },
-	);
+		render();
+	};
 
 	render();
-
-	return {
-		getState: () => state,
-		dispatch: (fn: (s: AppState) => AppState) => {
-			const res = fn(state);
-			if (res && res !== state) Object.assign(state, res);
-			render();
-		},
-		destroy: () => controller.abort(),
-	};
-};
-
-if (typeof document !== "undefined") {
-	const mountEl = document.getElementById("app");
-	const appObj = (window as unknown as { app?: { getState?: () => AppState } }).app;
-	if (mountEl && typeof appObj?.getState !== "function") {
-		(window as unknown as { app: ReturnType<typeof createApp> }).app = createApp(mountEl);
-	}
 }
