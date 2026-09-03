@@ -29,18 +29,43 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
     };
 
     const dismissOverlay = () => {
-      if (overlay) { overlay.remove(); overlay = null; }
+      if (overlay) {
+        overlay.remove();
+        overlay = null;
+      }
     };
+
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") dismissOverlay();
+    });
 
     const showOverlay = (message) => {
       dismissOverlay();
       overlay = document.createElement("div");
-      overlay.setAttribute("style", "position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.92);display:flex;align-items:center;justify-content:center;padding:2rem;cursor:pointer");
-      overlay.onclick = dismissOverlay;
+      overlay.style.cssText = "position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.85);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box";
+      overlay.onclick = (e) => {
+        if (e.target === overlay) dismissOverlay();
+      };
+
+      const card = document.createElement("div");
+      card.style.cssText = "background:#18181b;border:1px solid #ef4444;border-radius:12px;box-shadow:0 25px 50px -12px rgba(0,0,0,0.7);max-width:800px;width:100%;max-height:85vh;display:flex;flex-direction:column;overflow:hidden";
+
+      const header = document.createElement("div");
+      header.style.cssText = "display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#27272a;border-bottom:1px solid #3f3f46";
+      header.innerHTML = '<div style="display:flex;align-items:center;gap:8px"><span style="display:inline-block;width:8px;height:8px;border-radius:9999px;background:#ef4444"></span><span style="font-family:ui-monospace,monospace;font-size:12px;font-weight:600;color:#f43f5e;text-transform:uppercase;letter-spacing:0.05em">BunVite Build Error</span></div><button type="button" style="background:none;border:none;color:#a1a1aa;cursor:pointer;font-size:18px;line-height:1;padding:4px" title="Close (Esc)">&times;</button>';
+      header.querySelector("button")?.addEventListener("click", dismissOverlay);
+
+      const body = document.createElement("div");
+      body.style.cssText = "padding:20px;overflow-y:auto";
+
       const pre = document.createElement("pre");
-      pre.setAttribute("style", "color:#ef4444;font-family:ui-monospace,monospace;font-size:14px;max-width:80ch;white-space:pre-wrap;word-break:break-word");
+      pre.style.cssText = "margin:0;color:#fca5a5;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word";
       pre.textContent = message;
-      overlay.appendChild(pre);
+
+      body.appendChild(pre);
+      card.appendChild(header);
+      card.appendChild(body);
+      overlay.appendChild(card);
       document.body.appendChild(overlay);
     };
 
@@ -137,6 +162,37 @@ async function compileTailwind(force = false): Promise<string> {
   return code;
 }
 
+interface BuildErrorLike {
+  errors?: Array<{
+    message?: string;
+    position?: {
+      file?: string;
+      line?: number;
+      column?: number;
+      lineText?: string;
+    };
+  }>;
+}
+
+function formatBuildError(err: unknown): string {
+  const e = err as BuildErrorLike;
+  if (Array.isArray(e?.errors) && e.errors.length > 0) {
+    return e.errors
+      .map((item) => {
+        const pos = item.position;
+        if (pos?.lineText !== undefined) {
+          const col = Math.max(1, pos.column ?? 1);
+          const pointer = `${" ".repeat(col - 1)}^`;
+          const file = pos.file ?? "unknown";
+          return `${file}:${pos.line}:${pos.column}\n\n  ${pos.line} | ${pos.lineText}\n    | ${pointer}\n\n${item.message ?? "Build error"}`;
+        }
+        return item.message ?? String(item);
+      })
+      .join("\n\n---\n\n");
+  }
+  return err instanceof Error ? err.message : String(err);
+}
+
 async function compileTypeScript(
   filePath: string,
   force = false,
@@ -167,8 +223,8 @@ async function compileTypeScript(
     cachedJs.set(filePath, { code, timestamp: Date.now() });
     return { code };
   } catch (err: unknown) {
-    const error = err instanceof Error ? err.message : String(err);
-    console.error("❌ Build error:", error);
+    const error = formatBuildError(err);
+    console.error(`❌ Build error:\n${error}`);
     return { error };
   }
 }
@@ -217,8 +273,26 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
 
           await compileTailwind(true);
 
+          let compileError: string | null = null;
+          if (file.startsWith("src/") && (file.endsWith(".ts") || file.endsWith(".js"))) {
+            const compileResult = await compileTypeScript(join(CONFIG.root, file), true);
+            if ("error" in compileResult) {
+              compileError = compileResult.error;
+            }
+          }
+
           for (const socket of activeSockets) {
             try {
+              if (compileError) {
+                socket.send(
+                  JSON.stringify({
+                    type: "build-error",
+                    message: compileError,
+                  }),
+                );
+                continue;
+              }
+
               socket.send(
                 JSON.stringify({
                   type: "css-update",
