@@ -8,7 +8,6 @@ describe("BunVite Dev Engine & Todo App E2E Suite", () => {
 	let webview: Bun.WebView;
 
 	beforeAll(async () => {
-		// Start Vite dev server on ephemeral port (without live reload socket to run isolated test)
 		server = createDevServer(0, false);
 		baseUrl = `http://localhost:${server.port}`;
 
@@ -82,7 +81,7 @@ describe("BunVite Dev Engine & Todo App E2E Suite", () => {
 	test("3. toggle task completion", async () => {
 		const result = (await webview.evaluate(`(() => {
       const checkboxes = document.querySelectorAll('.todo-checkbox');
-      checkboxes[1].click(); // complete second task
+      checkboxes[1].click();
 
       return {
         completedCount: document.querySelectorAll('.todo-item.completed').length,
@@ -99,17 +98,14 @@ describe("BunVite Dev Engine & Todo App E2E Suite", () => {
 
 	test("4. test view filters (Active, Completed, All)", async () => {
 		const filterResults = (await webview.evaluate(`(() => {
-      // 1. Active
       document.querySelector('#filter-active').click();
       const activeCount = document.querySelectorAll('.todo-item').length;
       const activeText = document.querySelector('.todo-text')?.textContent?.trim();
 
-      // 2. Completed
       document.querySelector('#filter-completed').click();
       const completedCount = document.querySelectorAll('.todo-item').length;
       const completedText = document.querySelector('.todo-text')?.textContent?.trim();
 
-      // 3. All
       document.querySelector('#filter-all').click();
       const allCount = document.querySelectorAll('.todo-item').length;
 
@@ -131,11 +127,9 @@ describe("BunVite Dev Engine & Todo App E2E Suite", () => {
 
 	test("5. delete task and clear completed", async () => {
 		const finalState = (await webview.evaluate(`(() => {
-      // Delete first task ("Learn Bun")
       document.querySelectorAll('.delete-btn')[0].click();
       const countAfterDelete = document.querySelectorAll('.todo-item').length;
 
-      // Clear remaining completed task
       document.querySelector('#clear-completed-btn').click();
       const finalCount = document.querySelectorAll('.todo-item').length;
       const finalCountText = document.querySelector('#todo-count')?.textContent;

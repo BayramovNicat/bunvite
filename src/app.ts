@@ -1,4 +1,3 @@
-// --- Types ---
 export type Filter = "all" | "active" | "completed";
 
 export interface Todo {
@@ -12,7 +11,6 @@ export interface AppState {
 	readonly filter: Filter;
 }
 
-// --- Pure Functional State Reducers ---
 export const createInitialState = (): AppState => ({
 	todos: [],
 	filter: "all",
@@ -66,7 +64,6 @@ export const getFilteredTodos = (
 	return todos;
 };
 
-// --- Functional Component Views ---
 const Header = () => `
   <header class="text-center mb-8">
     <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-semibold mb-3 tracking-wide uppercase">
@@ -144,14 +141,12 @@ const Footer = (activeCount: number, currentFilter: Filter) => {
   `;
 };
 
-// --- App Store & Component Mount ---
 export const createApp = (
 	root: HTMLElement,
 	initialState = createInitialState(),
 ) => {
 	let state = initialState;
 
-	// Mount root layout once
 	root.className = "w-full max-w-lg";
 	root.innerHTML = `
     ${Header()}
@@ -184,7 +179,6 @@ export const createApp = (
 	) as HTMLDivElement;
 	const footerContainer = root.querySelector("#todo-footer") as HTMLElement;
 
-	// Pure dynamic render function
 	const render = () => {
 		const visibleTodos = getFilteredTodos(state.todos, state.filter);
 		const activeCount = state.todos.filter((t) => !t.completed).length;
@@ -198,7 +192,6 @@ export const createApp = (
 		render();
 	};
 
-	// Event handlers
 	formEl.addEventListener("submit", (e) => {
 		e.preventDefault();
 		if (inputEl.value.trim()) {
@@ -210,20 +203,17 @@ export const createApp = (
 	root.addEventListener("click", (e) => {
 		const target = e.target as HTMLElement;
 
-		// Filters
 		const filter = target.dataset.filter as Filter | undefined;
 		if (filter) {
 			dispatch((s) => setFilter(s, filter));
 			return;
 		}
 
-		// Clear completed
 		if (target.id === "clear-completed-btn") {
 			dispatch(clearCompleted);
 			return;
 		}
 
-		// Delete item
 		const itemEl = target.closest<HTMLLIElement>(".todo-item");
 		const id = itemEl?.dataset.id;
 		if (id && target.dataset.action === "delete") {
@@ -242,7 +232,6 @@ export const createApp = (
 		}
 	});
 
-	// Initial render
 	render();
 
 	return {
@@ -251,7 +240,6 @@ export const createApp = (
 	};
 };
 
-// Auto-mount
 if (typeof document !== "undefined") {
 	const mountEl = document.getElementById("app");
 	if (mountEl) {

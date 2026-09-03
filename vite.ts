@@ -1,93 +1,118 @@
 import { watch } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { file as bunFile, type Server, type ServerWebSocket, serve } from "bun";
 
-const ROOT_DIR = import.meta.dir;
-const DIST_DIR = join(ROOT_DIR, "dist");
-const SRC_DIR = join(ROOT_DIR, "src");
+const CONFIG = {
+	root: import.meta.dir,
+	srcDir: join(import.meta.dir, "src"),
+	distDir: join(import.meta.dir, "dist"),
+	devPort: Number(process.env.PORT) || 5173,
+	previewPort: Number(process.env.PORT) || 4173,
+} as const;
 
 const LIVE_RELOAD_SCRIPT = `
-<!-- BunVite Live Reload -->
 <script>
   (() => {
-    let socket;
-    function connect() {
-      const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-      socket = new WebSocket(\`\${protocol}//\${location.host}/ws-reload\`);
-      socket.onmessage = (e) => {
+    let ws;
+    const connect = () => {
+      const proto = location.protocol === "https:" ? "wss:" : "ws:";
+      ws = new WebSocket(\`\${proto}//\${location.host}/ws-reload\`);
+      ws.onmessage = (e) => {
         try {
-          const msg = JSON.parse(e.data);
-          if (msg.type === "reload") location.reload();
+          if (JSON.parse(e.data).type === "reload") location.reload();
         } catch (_) {}
       };
-      socket.onclose = () => setTimeout(connect, 1000);
-    }
+      ws.onclose = () => setTimeout(connect, 1000);
+    };
     connect();
   })();
 </script>
 `;
 
-/**
- * DEV SERVER (like `vite dev`)
- */
+let cachedCss: { code: string; timestamp: number } | null = null;
+const cachedJs = new Map<string, { code: string; timestamp: number }>();
+
+async function compileTailwind(force = false): Promise<string> {
+	if (!force && cachedCss) {
+		return cachedCss.code;
+	}
+
+	const proc = Bun.spawn(
+		["bun", "x", "@tailwindcss/cli", "-i", join(CONFIG.srcDir, "style.css")],
+		{
+			stdout: "pipe",
+			stderr: "pipe",
+		},
+	);
+
+	const code = await new Response(proc.stdout).text();
+	cachedCss = { code, timestamp: Date.now() };
+	return code;
+}
+
+async function compileTypeScript(
+	filePath: string,
+	force = false,
+): Promise<string | null> {
+	if (!force && cachedJs.has(filePath)) {
+		return cachedJs.get(filePath)?.code ?? null;
+	}
+
+	const build = await Bun.build({
+		entrypoints: [filePath],
+		target: "browser",
+		sourcemap: "inline",
+		minify: false,
+	});
+
+	if (!build.success || build.outputs.length === 0) {
+		console.error("❌ Build error:", build.logs);
+		return null;
+	}
+
+	const code = await build.outputs[0].text();
+	cachedJs.set(filePath, { code, timestamp: Date.now() });
+	return code;
+}
+
+function invalidateAssetCache(file?: string) {
+	if (!file || file.endsWith(".css")) cachedCss = null;
+	if (!file || file.endsWith(".ts") || file.endsWith(".js")) cachedJs.clear();
+}
+
 export function createDevServer(
-	port = 5173,
+	port = CONFIG.devPort,
 	enableLiveReload = true,
 ): Server<unknown> {
-	const sockets = new Set<ServerWebSocket<unknown>>();
-	let cachedCss = "";
-	let isCompilingCss = false;
+	const activeSockets = new Set<ServerWebSocket<unknown>>();
 
-	const compileCss = async () => {
-		if (isCompilingCss) return;
-		isCompilingCss = true;
-		try {
-			const proc = Bun.spawn(
-				["bun", "x", "@tailwindcss/cli", "-i", join(SRC_DIR, "style.css")],
-				{
-					stdout: "pipe",
-					stderr: "pipe",
-				},
-			);
-			cachedCss = await new Response(proc.stdout).text();
-		} catch (e) {
-			console.error("CSS compilation error:", e);
-		} finally {
-			isCompilingCss = false;
-		}
-	};
+	compileTailwind();
 
-	// Compile CSS initially
-	compileCss();
-
-	// Watch for changes and notify browser
 	if (enableLiveReload) {
-		let timer: Timer | null = null;
-		const notify = async (_event: string, filename: string | null) => {
-			if (filename?.endsWith(".css")) {
-				await compileCss();
-			}
-			if (timer) clearTimeout(timer);
-			timer = setTimeout(() => {
-				for (const ws of sockets) {
-					try {
-						ws.send(JSON.stringify({ type: "reload" }));
-					} catch (_) {}
-				}
-			}, 50);
-		};
+		let debounceTimer: Timer | null = null;
 
 		try {
-			watch(ROOT_DIR, { recursive: true }, (evt, file) => {
+			watch(CONFIG.root, { recursive: true }, (_evt, file) => {
 				if (
-					file &&
-					!file.startsWith("node_modules") &&
-					!file.startsWith("dist") &&
-					!file.startsWith(".git")
+					!file ||
+					file.startsWith("node_modules") ||
+					file.startsWith("dist") ||
+					file.startsWith(".git")
 				) {
-					notify(evt, file);
+					return;
 				}
+
+				invalidateAssetCache(file);
+
+				if (debounceTimer) clearTimeout(debounceTimer);
+				debounceTimer = setTimeout(() => {
+					for (const socket of activeSockets) {
+						try {
+							socket.send(JSON.stringify({ type: "reload" }));
+						} catch (_) {}
+					}
+				}, 40);
 			});
 		} catch (_) {}
 	}
@@ -96,65 +121,58 @@ export function createDevServer(
 		port,
 		websocket: {
 			open(ws) {
-				sockets.add(ws);
+				activeSockets.add(ws);
 			},
 			close(ws) {
-				sockets.delete(ws);
+				activeSockets.delete(ws);
 			},
 			message() {},
 		},
 		async fetch(req, server) {
 			const url = new URL(req.url);
+			const pathname = url.pathname;
 
-			// 1. Live Reload WebSocket
-			if (url.pathname === "/ws-reload") {
+			if (pathname === "/ws-reload") {
 				if (server.upgrade(req, { data: undefined })) return undefined;
 				return new Response("Upgrade failed", { status: 400 });
 			}
 
-			// 2. HTML entrypoint (serves root index.html)
-			if (url.pathname === "/" || url.pathname === "/index.html") {
-				const indexFile = bunFile(join(ROOT_DIR, "index.html"));
+			if (pathname === "/" || pathname === "/index.html") {
+				const indexFile = bunFile(join(CONFIG.root, "index.html"));
 				let html = await indexFile.text();
+
 				if (enableLiveReload) {
 					html = html.replace("</body>", `${LIVE_RELOAD_SCRIPT}</body>`);
 				}
+
 				return new Response(html, {
 					headers: { "Content-Type": "text/html; charset=utf-8" },
 				});
 			}
 
-			// 3. Dynamic Tailwind CSS on-the-fly compilation
-			if (url.pathname === "/src/style.css" || url.pathname.endsWith(".css")) {
-				if (!cachedCss) await compileCss();
-				return new Response(cachedCss, {
+			if (pathname === "/src/style.css" || pathname.endsWith(".css")) {
+				const css = await compileTailwind();
+				return new Response(css, {
 					headers: { "Content-Type": "text/css; charset=utf-8" },
 				});
 			}
 
-			// 4. On-demand TS / JS bundling via Bun.build
-			if (url.pathname.endsWith(".ts") || url.pathname.endsWith(".js")) {
-				const filePath = join(ROOT_DIR, url.pathname.replace(/^\//, ""));
-				const build = await Bun.build({
-					entrypoints: [filePath],
-					target: "browser",
-					sourcemap: "inline",
-				});
+			if (pathname.endsWith(".ts") || pathname.endsWith(".js")) {
+				const filePath = join(CONFIG.root, pathname.replace(/^\//, ""));
+				const js = await compileTypeScript(filePath);
 
-				if (build.success && build.outputs.length > 0) {
-					const js = await build.outputs[0].text();
+				if (js !== null) {
 					return new Response(js, {
 						headers: {
 							"Content-Type": "application/javascript; charset=utf-8",
 						},
 					});
 				}
-				return new Response("// Compilation error", { status: 500 });
+				return new Response("// Error compiling module", { status: 500 });
 			}
 
-			// 5. Static assets fallback
 			const staticFile = bunFile(
-				join(ROOT_DIR, url.pathname.replace(/^\//, "")),
+				join(CONFIG.root, pathname.replace(/^\//, "")),
 			);
 			if (await staticFile.exists()) {
 				return new Response(staticFile);
@@ -165,36 +183,29 @@ export function createDevServer(
 	});
 }
 
-/**
- * PRODUCTION BUILD (like `vite build`)
- */
-async function buildApp() {
-	console.log("🚀 [BunVite] Building for production...\n");
-	const startTime = performance.now();
+async function buildProduction() {
+	console.log("🚀 Starting production build...\n");
+	const start = performance.now();
+	const assetsDir = join(CONFIG.distDir, "assets");
 
-	await mkdir(join(DIST_DIR, "assets"), { recursive: true });
+	await mkdir(assetsDir, { recursive: true });
 
-	// 1. Bundle TypeScript to minified JS
-	console.log("📦 Bundling TypeScript...");
 	const jsBuild = await Bun.build({
-		entrypoints: [join(SRC_DIR, "app.ts")],
-		outdir: join(DIST_DIR, "assets"),
+		entrypoints: [join(CONFIG.srcDir, "app.ts")],
+		outdir: assetsDir,
 		naming: "app.[hash].js",
 		target: "browser",
 		minify: true,
 	});
 
-	if (!jsBuild.success) {
+	if (!jsBuild.success || jsBuild.outputs.length === 0) {
 		console.error("❌ JS Build failed:", jsBuild.logs);
 		process.exit(1);
 	}
 
-	const jsFileName = jsBuild.outputs[0].path.split("/").pop();
-
-	// 2. Compile Tailwind CSS to minified CSS
-	console.log("🎨 Compiling Tailwind CSS...");
-	const cssFileName = `style.${Date.now().toString(36)}.css`;
-	const cssPath = join(DIST_DIR, "assets", cssFileName);
+	const jsFile = basename(jsBuild.outputs[0].path);
+	const cssFile = `style.${Date.now().toString(36)}.css`;
+	const cssPath = join(assetsDir, cssFile);
 
 	const twProc = Bun.spawn(
 		[
@@ -202,7 +213,7 @@ async function buildApp() {
 			"x",
 			"@tailwindcss/cli",
 			"-i",
-			join(SRC_DIR, "style.css"),
+			join(CONFIG.srcDir, "style.css"),
 			"-o",
 			cssPath,
 			"--minify",
@@ -211,23 +222,18 @@ async function buildApp() {
 	);
 	await twProc.exited;
 
-	// 3. Process and write index.html with hashed asset URLs
-	console.log("📄 Generating production index.html...");
-	let html = await bunFile(join(ROOT_DIR, "index.html")).text();
-	html = html.replace("/src/style.css", `/assets/${cssFileName}`);
-	html = html.replace("/src/app.ts", `/assets/${jsFileName}`);
+	let html = await bunFile(join(CONFIG.root, "index.html")).text();
+	html = html.replace("/src/style.css", `/assets/${cssFile}`);
+	html = html.replace("/src/app.ts", `/assets/${jsFile}`);
 
-	await writeFile(join(DIST_DIR, "index.html"), html, "utf-8");
+	await writeFile(join(CONFIG.distDir, "index.html"), html, "utf-8");
 
-	const duration = (performance.now() - startTime).toFixed(1);
-	console.log(`\n✨ [BunVite] Production build completed in ${duration}ms!`);
+	const elapsed = (performance.now() - start).toFixed(1);
+	console.log(`\n✨ Production build completed in ${elapsed}ms!`);
 	console.log(`📂 Output: dist/\n`);
 }
 
-/**
- * PREVIEW SERVER (like `vite preview`)
- */
-function previewApp(port = 4173) {
+function previewProduction(port = CONFIG.previewPort) {
 	const server = serve({
 		port,
 		async fetch(req) {
@@ -235,7 +241,7 @@ function previewApp(port = 4173) {
 			let path = url.pathname;
 			if (path === "/" || path === "") path = "/index.html";
 
-			const file = bunFile(join(DIST_DIR, path));
+			const file = bunFile(join(CONFIG.distDir, path));
 			if (await file.exists()) {
 				return new Response(file);
 			}
@@ -243,29 +249,24 @@ function previewApp(port = 4173) {
 		},
 	});
 
-	console.log(
-		`🔍 [BunVite Preview] Serving production build at http://localhost:${server.port}`,
-	);
+	console.log(`🔍 Serving production build at http://localhost:${server.port}`);
 }
 
-// CLI Command Router
-const command = process.argv[2] || "dev";
+const cmd = process.argv[2] || "dev";
 
 if (import.meta.main) {
-	if (command === "dev") {
-		const port = Number(process.env.PORT) || 5173;
-		const server = createDevServer(port, true);
-		console.log(`\n  ⚡ BunVite v1.0.0 dev server running at:\n`);
-		console.log(`  > Local:    http://localhost:${server.port}/`);
-		console.log(`  > Network:  use --host to expose\n`);
-	} else if (command === "build") {
-		buildApp();
-	} else if (command === "preview") {
-		const port = Number(process.env.PORT) || 4173;
-		previewApp(port);
+	if (cmd === "dev") {
+		const server = createDevServer(CONFIG.devPort, true);
+		console.log(
+			`\n  ⚡ Dev server running at http://localhost:${server.port}/\n`,
+		);
+	} else if (cmd === "build") {
+		buildProduction();
+	} else if (cmd === "preview") {
+		previewProduction(CONFIG.previewPort);
 	} else {
 		console.log(
-			`Unknown command: ${command}. Usage: bun vite.ts [dev|build|preview]`,
+			`Unknown command: "${cmd}". Usage: bun vite.ts [dev|build|preview]`,
 		);
 	}
 }
