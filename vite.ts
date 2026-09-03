@@ -400,15 +400,6 @@ export function createDevServer(
           const timestamp = Date.now();
           const file = rawFile.replace(/^[./]+/, '');
 
-          if (file.endsWith('.html')) {
-            for (const socket of activeSockets) {
-              try {
-                socket.send(JSON.stringify({ type: 'full-reload' }));
-              } catch (_) {}
-            }
-            return;
-          }
-
           let compileError: string | null = null;
 
           if (file.startsWith('src/') && (file.endsWith('.ts') || file.endsWith('.js'))) {

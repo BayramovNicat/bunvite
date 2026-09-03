@@ -63,7 +63,7 @@ declare global {
   }
 }
 
-const todayDate = new Date();
+const now = new Date();
 
 const defaultState: AppState = {
   todos: loadSavedTodos(),
@@ -72,8 +72,8 @@ const defaultState: AppState = {
   currentView: 'inbox',
   selectedCategory: null,
   selectedDate: getTodayStr(),
-  calendarYear: todayDate.getFullYear(),
-  calendarMonth: todayDate.getMonth(),
+  calendarYear: now.getFullYear(),
+  calendarMonth: now.getMonth(),
   editingId: null,
   lastDeleted: null,
 };
@@ -238,9 +238,10 @@ const TodoItem = (t: Todo, todayStr: string): string => {
   `;
 };
 
-const renderCalendar = () => {
-  const year = state.calendarYear || todayDate.getFullYear();
-  const month = state.calendarMonth ?? todayDate.getMonth();
+const renderCalendar = (): string => {
+  const cur = new Date();
+  const year = state.calendarYear || cur.getFullYear();
+  const month = state.calendarMonth ?? cur.getMonth();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDay = new Date(year, month, 1).getDay();
   const prevMonthDays = new Date(year, month, 0).getDate();
@@ -357,7 +358,7 @@ const renderSidebar = () => {
                 ${v.icon}
                 <span>${v.label}</span>
               </div>
-              ${v.count !== undefined ? /*html*/ `<span class="text-[11px] px-1.5 py-0.2 rounded-full ${isActive ? 'bg-indigo-500/20 text-indigo-300' : 'bg-zinc-800 text-zinc-500'}">${v.count}</span>` : ''}
+              ${v.count !== undefined ? /*html*/ `<span class="text-[11px] px-1.5 py-0.5 rounded-full ${isActive ? 'bg-indigo-500/20 text-indigo-300' : 'bg-zinc-800 text-zinc-500'}">${v.count}</span>` : ''}
             </button>
           `;
           })
@@ -428,23 +429,12 @@ const render = () => {
   const todayStr = getTodayStr();
 
   const visible = state.todos.filter((t) => {
-    if (state.currentView === 'completed' || state.filter === 'completed') {
-      if (!t.completed) return false;
-    } else if (state.filter === 'active') {
-      if (t.completed) return false;
-    }
-
-    if (state.currentView === 'today') {
-      if (t.dueDate !== todayStr) return false;
-    } else if (state.currentView === 'calendar') {
-      if (t.dueDate !== state.selectedDate) return false;
-    } else if (state.currentView === 'category' && state.selectedCategory) {
-      if (t.category !== state.selectedCategory) return false;
-    }
-
-    if (query && !t.text.toLowerCase().includes(query)) return false;
-
-    return true;
+    if ((state.currentView === 'completed' || state.filter === 'completed') && !t.completed) return false;
+    if (state.filter === 'active' && t.completed) return false;
+    if (state.currentView === 'today' && t.dueDate !== todayStr) return false;
+    if (state.currentView === 'calendar' && t.dueDate !== state.selectedDate) return false;
+    if (state.currentView === 'category' && state.selectedCategory && t.category !== state.selectedCategory) return false;
+    return !query || t.text.toLowerCase().includes(query);
   });
 
   const active = state.todos.filter((t) => !t.completed).length;
@@ -617,14 +607,12 @@ root.onclick = (e) => {
     state.selectedDate = date;
     syncDueDateInput(date);
   } else if (action === 'prev-month') {
-    state.calendarMonth--;
-    if (state.calendarMonth < 0) {
+    if (--state.calendarMonth < 0) {
       state.calendarMonth = 11;
       state.calendarYear--;
     }
   } else if (action === 'next-month') {
-    state.calendarMonth++;
-    if (state.calendarMonth > 11) {
+    if (++state.calendarMonth > 11) {
       state.calendarMonth = 0;
       state.calendarYear++;
     }
