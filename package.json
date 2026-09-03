@@ -16,6 +16,11 @@
     "check:test": "bun test test/todo.test.ts",
     "check": "bun run --parallel \"check:*\""
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BayramovNicat/bunvite.git"
+  },
+  "homepage": "https://github.com/BayramovNicat/bunvite#readme",
   "devDependencies": {
     "tailwindcss": "^4.3.3"
   }

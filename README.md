@@ -53,11 +53,25 @@ Replaces standard npm Vite with a single self-contained script (`vite.ts`) utili
 
 - [Bun](https://bun.sh) (v1.2 or higher)
 
-### Setup
+### Quickstart
 
 ```bash
-git clone <repo-url>
-cd <repo-name>
+# Scaffold a clean copy of the starter
+bunx degit BayramovNicat/bunvite my-new-app
+
+# Navigate and install dependencies (~100ms)
+cd my-new-app
+bun install
+
+# Start development server
+bun run dev
+```
+
+Alternatively, clone via git:
+
+```bash
+git clone https://github.com/BayramovNicat/bunvite.git my-new-app
+cd my-new-app
 bun install
 bun run dev
 ```
