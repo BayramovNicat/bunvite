@@ -12,7 +12,7 @@ import {
   previewProduction,
   replaceEnvInHtml,
   startServerWithFallback,
-} from '../vite';
+} from '../../vite';
 
 describe('dev server', () => {
   let devServer: Server<unknown>;
@@ -101,7 +101,7 @@ describe('dev server', () => {
   });
 
   test('broadcasts build error on syntax failure', async () => {
-    const badFilePath = join(CONFIG.srcDir, 'temp-syntax-error.ts');
+    const badFilePath = join(CONFIG.root, 'test', 'temp-syntax-error.ts');
     const ws = new WebSocket(`ws://localhost:${devServer.port}/ws-hmr`);
 
     const origError = console.error;
@@ -123,7 +123,7 @@ describe('dev server', () => {
 
       await Bun.write(badFilePath, 'const invalid syntax = ;');
 
-      const res = await fetch(`${devBase}/src/temp-syntax-error.ts`);
+      const res = await fetch(`${devBase}/test/temp-syntax-error.ts`);
       expect(res.status).toBe(500);
 
       const msg = await Promise.race([
@@ -165,6 +165,16 @@ describe('dev server', () => {
 });
 
 describe('production build & preview', () => {
+  const origLog = console.log;
+
+  beforeAll(() => {
+    console.log = () => {};
+  });
+
+  afterAll(() => {
+    console.log = origLog;
+  });
+
   test('cleans dist, copies public/, and writes hashed assets', async () => {
     await buildProduction();
 
@@ -369,7 +379,7 @@ describe('environment variables & HTML transforms', () => {
   });
 
   test('compiles import.meta.env expressions into client bundles', async () => {
-    const testFile = join(CONFIG.srcDir, 'temp-env-test.ts');
+    const testFile = join(CONFIG.root, 'test', 'temp-env-test.ts');
     await Bun.write(
       testFile,
       'export const isDev = import.meta.env.DEV;\nexport const mode = import.meta.env.MODE;',
@@ -378,7 +388,7 @@ describe('environment variables & HTML transforms', () => {
     try {
       const devServer = createDevServer(0, true);
       try {
-        const res = await fetch(`http://localhost:${devServer.port}/src/temp-env-test.ts`);
+        const res = await fetch(`http://localhost:${devServer.port}/test/temp-env-test.ts`);
         expect(res.status).toBe(200);
         const js = await res.text();
         expect(js).toContain('true');

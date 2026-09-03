@@ -153,4 +153,92 @@ describe('todo app', () => {
     expect(counts.badge).toBe('2');
     expect(counts.remaining).toBe('2 remaining');
   });
+
+  test('persists tasks to localStorage', async () => {
+    const raw = (await webview.evaluate(`localStorage.getItem('bunvite_todos')`)) as string;
+    expect(raw).toBeDefined();
+    const parsed = JSON.parse(raw) as { text: string }[];
+    expect(parsed.length).toBeGreaterThan(1);
+    expect(parsed.map((t) => t.text)).toContain('Task One');
+  });
+
+  test('edits task inline', async () => {
+    const result = (await webview.evaluate(`(() => {
+      const editBtn = document.querySelector('button[data-action="edit"]');
+      editBtn.click();
+      const editInput = document.querySelector('input[data-edit-input]');
+      editInput.value = 'Task One (Edited)';
+      const saveBtn = document.querySelector('button[data-action="save-edit"]');
+      saveBtn.click();
+      const texts = Array.from(document.querySelectorAll('.todo-text')).map((el) => el.textContent?.trim());
+      return { texts, isEditing: !!document.querySelector('input[data-edit-input]') };
+    })()`)) as { texts: string[]; isEditing: boolean };
+
+    expect(result.isEditing).toBe(false);
+    expect(result.texts).toContain('Task One (Edited)');
+  });
+
+  test('cycles task priority', async () => {
+    const priorities = (await webview.evaluate(`(() => {
+      const getBtn = () => document.querySelector('button[data-action="priority"]');
+      const initial = getBtn().title;
+      getBtn().click();
+      const afterFirst = getBtn().title;
+      getBtn().click();
+      const afterSecond = getBtn().title;
+      return { initial, afterFirst, afterSecond };
+    })()`)) as { initial: string; afterFirst: string; afterSecond: string };
+
+    expect(priorities.initial).toBe('Priority: low');
+    expect(priorities.afterFirst).toBe('Priority: medium');
+    expect(priorities.afterSecond).toBe('Priority: high');
+  });
+
+  test('toggles all tasks at once', async () => {
+    const result = (await webview.evaluate(`(() => {
+      const toggleAllBtn = document.querySelector('button[data-action="toggle-all"]');
+      toggleAllBtn.click();
+      const countCompleted = document.querySelectorAll('.todo-text.line-through').length;
+      toggleAllBtn.click();
+      const countActive = document.querySelectorAll('.todo-text:not(.line-through)').length;
+      return { countCompleted, countActive };
+    })()`)) as { countCompleted: number; countActive: number };
+
+    expect(result.countCompleted).toBe(2);
+    expect(result.countActive).toBe(2);
+  });
+
+  test('filters tasks with search query', async () => {
+    const result = (await webview.evaluate(`(() => {
+      const searchInput = document.querySelector('input[data-action="search"]');
+      searchInput.value = 'Edited';
+      searchInput.dispatchEvent(new Event('input'));
+      const countFiltered = document.querySelectorAll('.todo-item').length;
+      searchInput.value = '';
+      searchInput.dispatchEvent(new Event('input'));
+      const countReset = document.querySelectorAll('.todo-item').length;
+      return { countFiltered, countReset };
+    })()`)) as { countFiltered: number; countReset: number };
+
+    expect(result.countFiltered).toBe(1);
+    expect(result.countReset).toBe(2);
+  });
+
+  test('undoes task deletion', async () => {
+    const result = (await webview.evaluate(`(() => {
+      const initialCount = document.querySelectorAll('.todo-item').length;
+      const deleteBtn = document.querySelector('button[data-action="delete"]');
+      deleteBtn.click();
+      const countAfterDelete = document.querySelectorAll('.todo-item').length;
+      const undoBtn = document.querySelector('button[data-action="undo"]');
+      const hasUndoToast = !!undoBtn;
+      undoBtn.click();
+      const countAfterUndo = document.querySelectorAll('.todo-item').length;
+      return { initialCount, countAfterDelete, hasUndoToast, countAfterUndo };
+    })()`)) as { initialCount: number; countAfterDelete: number; hasUndoToast: boolean; countAfterUndo: number };
+
+    expect(result.countAfterDelete).toBe(result.initialCount - 1);
+    expect(result.hasUndoToast).toBe(true);
+    expect(result.countAfterUndo).toBe(result.initialCount);
+  });
 });

@@ -6,12 +6,14 @@
     "dev": "bun --watch run vite.ts dev",
     "build": "bun run vite.ts build",
     "preview": "bun run vite.ts preview",
-    "test": "bun test --parallel",
+    "test": "bun test test/todo.test.ts",
+    "test:engine": "bun test test/engine/vite.test.ts",
+    "test:all": "bun test test/todo.test.ts test/engine/vite.test.ts --parallel",
     "lint": "bunx biome check .",
     "format": "bunx biome format --write .",
     "check:types": "bunx tsc --noEmit",
     "check:lint": "bunx biome check .",
-    "check:test": "bun test --parallel",
+    "check:test": "bun test test/todo.test.ts",
     "check": "bun run --parallel \"check:*\""
   },
   "devDependencies": {
