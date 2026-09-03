@@ -27,6 +27,13 @@ export interface AppState {
 const STORAGE_KEY = 'bunvite_todos';
 const CATEGORIES = ['General', 'Work', 'Personal'] as const;
 
+const escapeHtml = (text: string): string =>
+  text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
 const getTodayStr = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -175,7 +182,61 @@ const MONTH_NAMES = [
   'October',
   'November',
   'December',
-];
+] as const;
+
+const syncDueDateInput = (date: string): void => {
+  const dateInput = form.elements.namedItem('dueDate') as HTMLInputElement | null;
+  if (dateInput) dateInput.value = date;
+};
+
+const TodoEditRow = (t: Todo): string => /*html*/ `
+  <li class="todo-item flex items-center gap-2 px-5 py-2.5 bg-zinc-800/50" data-id="${t.id}">
+    <input type="text" data-edit-input="${t.id}" value="${escapeHtml(t.text)}" class="flex-1 bg-zinc-800 border border-indigo-500/80 rounded-lg px-2.5 py-1 text-sm text-zinc-100 focus:outline-hidden" />
+    <button type="button" data-action="save-edit" class="text-xs px-2.5 py-1 rounded bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 transition-colors cursor-pointer">Save</button>
+    <button type="button" data-action="cancel-edit" class="text-xs px-2 py-1 rounded text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer">Cancel</button>
+  </li>
+`;
+
+const TodoItem = (t: Todo, todayStr: string): string => {
+  const priority = t.priority ?? 'low';
+  const categoryBadge = t.category
+    ? /*html*/ `<span class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-zinc-800/80 text-zinc-400 border border-zinc-700/50">${t.category}</span>`
+    : '';
+
+  const dateDisplay = t.dueDate
+    ? /*html*/ `<span class="text-[11px] ${t.dueDate === todayStr ? 'text-indigo-400 font-medium' : 'text-zinc-500'}">${t.dueDate === todayStr ? 'Today' : t.dueDate}</span>`
+    : '';
+
+  const priorityBadgeStyle =
+    priority === 'high'
+      ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+      : priority === 'medium'
+        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+        : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800';
+
+  const priorityLabel = priority === 'high' ? 'High' : priority === 'medium' ? 'Med' : 'Low';
+
+  return /*html*/ `
+    <li class="todo-item group list-none flex items-center gap-3 px-5 py-3.5 hover:bg-white/2 transition-colors cursor-grab active:cursor-grabbing" data-id="${t.id}" draggable="true">
+      <span class="opacity-0 group-hover:opacity-40 hover:opacity-100 text-zinc-500 shrink-0 select-none">${Grip}</span>
+      <button type="button" data-action="toggle" class="shrink-0 size-4.5 rounded-full border transition-all cursor-pointer flex items-center justify-center ${t.completed ? 'bg-indigo-500 border-indigo-500' : 'border-zinc-600 hover:border-zinc-400 bg-transparent'}">
+        ${t.completed ? Check : ''}
+      </button>
+      <span class="todo-text flex-1 text-sm leading-relaxed select-none transition-colors cursor-pointer ${t.completed ? 'line-through text-zinc-600' : 'text-zinc-200'}" data-action="toggle">${escapeHtml(t.text)}</span>
+      <div class="flex items-center gap-1.5 shrink-0">
+        ${categoryBadge}
+        ${dateDisplay}
+        <button type="button" data-action="priority" title="Priority: ${priority}" class="text-[10px] font-medium px-1.5 py-0.5 rounded transition-colors cursor-pointer ${priorityBadgeStyle}">
+          ${priorityLabel}
+        </button>
+      </div>
+      <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+        <button type="button" data-action="edit" title="Edit task" class="size-5 flex items-center justify-center rounded text-zinc-600 hover:text-zinc-300 hover:bg-white/5 transition-all cursor-pointer">${Pencil}</button>
+        <button type="button" data-action="delete" title="Delete task" class="delete-btn size-5 flex items-center justify-center rounded text-zinc-600 hover:text-zinc-300 hover:bg-white/5 transition-all cursor-pointer">${Close}</button>
+      </div>
+    </li>
+  `;
+};
 
 const renderCalendar = () => {
   const year = state.calendarYear || todayDate.getFullYear();
@@ -408,59 +469,7 @@ const render = () => {
 
   list.innerHTML = visible.length
     ? visible
-        .map((t) => {
-          if (state.editingId === t.id) {
-            return /*html*/ `
-              <li class="todo-item flex items-center gap-2 px-5 py-2.5 bg-zinc-800/50" data-id="${t.id}">
-                <input type="text" data-edit-input="${t.id}" value="${t.text.replace(/"/g, '&quot;')}" class="flex-1 bg-zinc-800 border border-indigo-500/80 rounded-lg px-2.5 py-1 text-sm text-zinc-100 focus:outline-hidden" />
-                <button type="button" data-action="save-edit" class="text-xs px-2.5 py-1 rounded bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 transition-colors cursor-pointer">Save</button>
-                <button type="button" data-action="cancel-edit" class="text-xs px-2 py-1 rounded text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer">Cancel</button>
-              </li>
-            `;
-          }
-
-          const priorityClass =
-            t.priority === 'high'
-              ? 'bg-rose-500 ring-2 ring-rose-500/20'
-              : t.priority === 'medium'
-                ? 'bg-amber-400 ring-2 ring-amber-500/20'
-                : 'bg-zinc-700 hover:bg-zinc-500';
-
-          const categoryBadge = t.category
-            ? /*html*/ `<span class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-zinc-800/80 text-zinc-400 border border-zinc-700/50">${t.category}</span>`
-            : '';
-
-          const dateDisplay = t.dueDate
-            ? /*html*/ `<span class="text-[11px] ${t.dueDate === todayStr ? 'text-indigo-400 font-medium' : 'text-zinc-500'}">${t.dueDate === todayStr ? 'Today' : t.dueDate}</span>`
-            : '';
-
-          return /*html*/ `
-            <li class="todo-item group list-none flex items-center gap-3 px-5 py-3.5 hover:bg-white/2 transition-colors cursor-grab active:cursor-grabbing" data-id="${t.id}" draggable="true">
-              <span class="opacity-0 group-hover:opacity-40 hover:opacity-100 text-zinc-500 shrink-0 select-none">${Grip}</span>
-              <button type="button" data-action="toggle" class="shrink-0 size-4.5 rounded-full border transition-all cursor-pointer flex items-center justify-center ${t.completed ? 'bg-indigo-500 border-indigo-500' : 'border-zinc-600 hover:border-zinc-400 bg-transparent'}">
-                ${t.completed ? Check : ''}
-              </button>
-              <span class="todo-text flex-1 text-sm leading-relaxed select-none transition-colors cursor-pointer ${t.completed ? 'line-through text-zinc-600' : 'text-zinc-200'}" data-action="toggle">${t.text}</span>
-              <div class="flex items-center gap-1.5 shrink-0">
-                ${categoryBadge}
-                ${dateDisplay}
-                <button type="button" data-action="priority" title="Priority: ${t.priority ?? 'low'}" class="text-[10px] font-medium px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
-                  t.priority === 'high'
-                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                    : t.priority === 'medium'
-                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                      : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800'
-                }">
-                  ${t.priority === 'high' ? 'High' : t.priority === 'medium' ? 'Med' : 'Low'}
-                </button>
-              </div>
-              <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                <button type="button" data-action="edit" title="Edit task" class="size-5 flex items-center justify-center rounded text-zinc-600 hover:text-zinc-300 hover:bg-white/5 transition-all cursor-pointer">${Pencil}</button>
-                <button type="button" data-action="delete" title="Delete task" class="delete-btn size-5 flex items-center justify-center rounded text-zinc-600 hover:text-zinc-300 hover:bg-white/5 transition-all cursor-pointer">${Close}</button>
-              </div>
-            </li>
-          `;
-        })
+        .map((t) => (state.editingId === t.id ? TodoEditRow(t) : TodoItem(t, todayStr)))
         .join('')
     : /*html*/ `<p class="text-zinc-600 text-xs text-center py-8">${emptyMessage}</p>`;
 
@@ -515,10 +524,7 @@ form.onsubmit = (e) => {
 
   saveTodos(state.todos);
   form.reset();
-
-  const dateInput = form.elements.namedItem('dueDate') as HTMLInputElement;
-  if (dateInput) dateInput.value = state.selectedDate;
-
+  syncDueDateInput(state.selectedDate);
   render();
 };
 
@@ -567,8 +573,6 @@ root.ondblclick = (e) => {
   if (!el) return;
   const id = el.closest<HTMLElement>('[data-id]')?.dataset.id;
   if (!id) return;
-  const item = state.todos.find((t) => t.id === id);
-  if (item) item.completed = !item.completed;
   state.editingId = id;
   render();
 };
@@ -611,8 +615,7 @@ root.onclick = (e) => {
     state.currentView = 'inbox';
   } else if (action === 'select-date' && date) {
     state.selectedDate = date;
-    const dateInput = form.elements.namedItem('dueDate') as HTMLInputElement;
-    if (dateInput) dateInput.value = date;
+    syncDueDateInput(date);
   } else if (action === 'prev-month') {
     state.calendarMonth--;
     if (state.calendarMonth < 0) {
@@ -630,8 +633,7 @@ root.onclick = (e) => {
     state.calendarYear = now.getFullYear();
     state.calendarMonth = now.getMonth();
     state.selectedDate = getTodayStr();
-    const dateInput = form.elements.namedItem('dueDate') as HTMLInputElement;
-    if (dateInput) dateInput.value = state.selectedDate;
+    syncDueDateInput(state.selectedDate);
   } else if (filter) {
     state.filter = filter as Filter;
   } else if (action === 'clear') {
