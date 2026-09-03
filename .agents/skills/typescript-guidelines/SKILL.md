@@ -23,7 +23,7 @@ This skill defines the architectural standards for writing clean, ultra-minimal,
    * If a value does not need a function wrapper, make it a constant.
    * If a state update and render pass can be unified, do not decouple them into artificial layers.
 4. **Direct Entry Mounting:**
-   * Query the mount root (`const root = document.querySelector("#app");`) at the top and run application logic directly. Avoid unnecessary `function createApp()` wrapper ceremonies and defensive SSR checks in client-only entry scripts.
+   * Query the mount root (`const root = document.querySelector("#app") as HTMLElement;`) directly at the top. Avoid unnecessary `function createApp()` wrapper ceremonies, defensive SSR checks, and nested `if (root)` blocks wrapping the entire file.
 
 ---
 
