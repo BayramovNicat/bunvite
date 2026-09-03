@@ -1,5 +1,5 @@
 import { watch } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { file as bunFile, type Server, type ServerWebSocket, serve } from "bun";
 
@@ -280,6 +280,7 @@ async function buildProduction() {
   const start = performance.now();
   const assetsDir = join(CONFIG.distDir, "assets");
 
+  await rm(CONFIG.distDir, { recursive: true, force: true });
   await mkdir(assetsDir, { recursive: true });
 
   const jsBuild = await Bun.build({
@@ -320,7 +321,7 @@ async function buildProduction() {
   html = html.replace("/src/style.css", `/assets/${cssFile}`);
   html = html.replace("/src/app.ts", `/assets/${jsFile}`);
 
-  await writeFile(join(CONFIG.distDir, "index.html"), html, "utf-8");
+  await Bun.write(join(CONFIG.distDir, "index.html"), html);
 
   const elapsed = (performance.now() - start).toFixed(1);
   console.log(`\n✨ Production build completed in ${elapsed}ms!`);
