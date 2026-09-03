@@ -2,149 +2,136 @@
 name: bunvite-guidelines
 description: >-
   Architecture guide, standards, and rules for the BunVite development engine in this workspace.
-  Explains the zero-dependency Bun dev engine (vite.ts), prevents installing npm vite or heavy bundlers,
+  Explains the self-contained Bun dev engine (vite.ts), prevents installing npm vite or heavy bundlers,
   details HMR state preservation, API dev proxy, import.meta.env, asset serving, and build workflows.
 ---
 
-# BunVite Architecture & Development Guidelines
+# BunVite Architecture & Guidelines
 
-This skill documents the architecture, conventions, and rules for working with the **BunVite engine** in this repository.
-
----
-
-## 1. Core Rule: Zero External Bundler Runtime
-
-- **NEVER install `vite`, `webpack`, `rollup`, `esbuild`, or bundler plugins.**
-- The file [`vite.ts`](file:///Users/nicat/Documents/antigravity/agitated-galileo/vite.ts) in the workspace root **is** the complete dev server, HMR engine, and production bundler.
-- It is built 100% natively on **[Bun](https://bun.sh)** APIs:
-  - `Bun.serve` for the HTTP, WebSocket, and duplex proxy server.
-  - `Bun.build` for in-memory TypeScript compilation and production JS bundling.
-  - `@tailwindcss/cli` invoked via `Bun.spawn` for Tailwind CSS v4 compilation.
-  - `Bun.hash` for 64-bit content ETags and `Bun.gzipSync` for compression.
+This document details the architecture, conventions, and operational rules for working with the BunVite engine in this workspace.
 
 ---
 
-## 2. CLI Commands & Execution Flow
+## 1. Engine Core Principles
 
-Always use the existing scripts defined in [`package.json`](file:///Users/nicat/Documents/antigravity/agitated-galileo/package.json):
-
-| Command           | Action                   | Engine Internals                                                                                                                                                          |
-| :---------------- | :----------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `bun run dev`     | Starts dev server        | Spawns `bun --watch run vite.ts dev`. Watches files, compiles on demand, serves live HMR over WebSocket (`/ws-hmr`). Supports `--open` / `-o`.                            |
-| `bun run build`   | Builds production bundle | Cleans `dist/`, runs `Bun.build` with minification + hashing, compiles Tailwind CSS v4, replaces `%VITE_*%` in `index.html`, and prints uncompressed & gzip size summary. |
-| `bun run preview` | Previews `dist/`         | Serves `dist/` with on-the-fly gzip compression, `Cache-Control: immutable`, and SPA fallback routing. Supports `--open` / `-o`.                                          |
-| `bun run test`    | Runs test suite          | Runs 40+ tests across DOM E2E and engine parity suites in ~1s.                                                                                                            |
-| `bun run check`   | Typecheck, lint & tests  | Runs `tsc`, `biome check`, and `bun test` concurrently in parallel.                                                                                                       |
+- **Never install `vite`, `webpack`, `rollup`, `esbuild`, or bundler plugins.**
+- The root [`vite.ts`](file:///Users/nicat/Documents/antigravity/agitated-galileo/vite.ts) script is the entire dev server, HMR engine, and production bundler.
+- It uses native Bun runtime APIs exclusively:
+  - `Bun.serve` for HTTP, WebSocket, and duplex proxy handling.
+  - `Bun.build` for client TypeScript compilation and production JS bundling.
+  - `@tailwindcss/cli` executed through `Bun.spawn` for Tailwind CSS v4 compilation.
+  - `Bun.hash` for 64-bit content ETags.
+  - `Bun.gzipSync` for gzip calculation and production preview compression.
+- `package.json` contains only one dev dependency (`tailwindcss`). Linter (`biome`) and TypeScript compiler (`tsc`) run on demand via `bunx`.
 
 ---
 
-## 3. Hot Module Replacement (HMR) & State Preservation
+## 2. Scripts and Commands
 
-When modifying or creating client code in `src/`:
+Use the scripts defined in [`package.json`](file:///Users/nicat/Documents/antigravity/agitated-galileo/package.json):
 
-### 1. State Preservation via `__hmr_state__`
+| Command | Purpose | Details |
+| :--- | :--- | :--- |
+| `bun run dev` | Development server | `bun --watch run vite.ts dev`. Compiles on demand, streams HMR over `/ws-hmr`. Supports `--open` / `-o`. |
+| `bun run build` | Production build | Cleans `dist/`, builds minified/hashed JS and CSS bundles, replaces `%VITE_*%` in `index.html`, outputs size summary. |
+| `bun run preview` | Preview server | Serves `dist/` with gzip compression, `Cache-Control: immutable`, and SPA route fallback. Supports `--open` / `-o`. |
+| `bun run test` | Run tests | Executes unit, integration, and WebKit DOM tests via `bun test --parallel`. |
+| `bun run lint` | Lint check | Runs `bunx biome check .`. |
+| `bun run format` | Code formatting | Runs `bunx biome format --write .`. |
+| `bun run check:types` | Typecheck | Runs `bunx tsc --noEmit`. |
+| `bun run check` | Full test suite | Concurrently runs typecheck, linting, and all tests in parallel. |
 
-The dev server transforms state variables to attach to `window.__hmr_state__` during compilation:
+---
+
+## 3. Type Declarations
+
+All ambient declarations live in the root [`types/`](file:///Users/nicat/Documents/antigravity/agitated-galileo/types) folder. Keep `src/` free of `.d.ts` files.
+
+- [`types/bun.d.ts`](file:///Users/nicat/Documents/antigravity/agitated-galileo/types/bun.d.ts): Minimal ambient interfaces for `Bun.serve`, `Bun.build`, `Bun.spawn`, `Bun.WebView`, and `bun:test`.
+- [`types/env.d.ts`](file:///Users/nicat/Documents/antigravity/agitated-galileo/types/env.d.ts): Type definitions for `import.meta.env`.
+
+---
+
+## 4. Hot Module Replacement & State Preservation
+
+### State Retention via `__hmr_state__`
+
+The development compiler automatically preserves state across module reloads if bound to `window.__hmr_state__`:
 
 ```typescript
-// ✅ Correct: State survives HMR module reload without resetting user data
 var state = (window.__hmr_state__ ??= {
   todos: [] as Todo[],
   filter: 'all' as Filter,
 });
 ```
 
-### 2. Active Input Focus Preservation
+### Active Input Focus Retention
 
-The client HMR runtime automatically captures the active focused input (`#todo-input`), its text value, and selection cursor (`selectionStart` / `selectionEnd`), and restores them after replacing the module in the DOM. Maintain standard input IDs where focus preservation is required.
+The HMR runtime records active focused input elements, their value, and cursor selection ranges before reloading modules, restoring them immediately after DOM swap.
 
-### 3. Stylesheet Hot-Swapping
+### Stylesheet Hot-Swapping
 
-Editing `src/style.css` compiles Tailwind CSS in memory and notifies the browser. The browser swaps `<link rel="stylesheet">` tags with timestamp query strings (`?t=...`) without reloading the page or losing JavaScript state.
+Modifications to `src/style.css` trigger an in-memory CSS rebuild. The browser updates `<link rel="stylesheet">` tags with a timestamp parameter without reloading the document or losing JavaScript runtime state.
 
 ---
 
-## 4. Environment Variables (`import.meta.env`)
+## 5. Tailwind CSS v4 Source Scoping
 
-- **Prefix Rule:** Only environment variables prefixed with `VITE_` are exposed to client-side code and HTML templates.
-- **Server Variables:** Non-prefixed variables (`PORT`, `DATABASE_URL`) remain strictly on the server and are never bundled into client output.
-- **HTML Token Replacement:** Tokens like `%VITE_APP_TITLE%` in `index.html` are automatically replaced at compile/build time.
+Tailwind v4 discovers and scans workspace files automatically. To prevent it from scanning documentation, markdown files, or tests (which inflates production CSS bundles), [`src/style.css`](file:///Users/nicat/Documents/antigravity/agitated-galileo/src/style.css) explicitly scopes input sources:
 
-### Adding New Environment Variables:
+```css
+@import "tailwindcss" source(none);
+@source "../index.html";
+@source "./";
+```
 
-1. Add the variable to [`.env`](file:///Users/nicat/Documents/antigravity/agitated-galileo/.env) (and [`.env.example`](file:///Users/nicat/Documents/antigravity/agitated-galileo/.env.example)):
+VS Code CSS validation warnings on `source(none)` are suppressed via `css.validate: false` in [`.vscode/settings.json`](file:///Users/nicat/Documents/antigravity/agitated-galileo/.vscode/settings.json).
+
+---
+
+## 6. Environment Variables (`import.meta.env`)
+
+- **Exposure rule:** Only variables with a `VITE_` prefix are bundled into client code or replaced in HTML templates.
+- **Server safety:** System variables without `VITE_` remain on the server and are never exposed to browser bundles.
+- **HTML injection:** Any `%VITE_VAR%` pattern in `index.html` is replaced with the corresponding variable value.
+
+### Adding Variables
+
+1. Add the key to [`.env`](file:///Users/nicat/Documents/antigravity/agitated-galileo/.env) and [`.env.example`](file:///Users/nicat/Documents/antigravity/agitated-galileo/.env.example):
    ```bash
-   VITE_NEW_FEATURE=true
+   VITE_APP_NAME=My App
    ```
-2. Augment the TypeScript declaration in [`types/env.d.ts`](file:///Users/nicat/Documents/antigravity/agitated-galileo/types/env.d.ts):
+2. Declare the type in [`types/env.d.ts`](file:///Users/nicat/Documents/antigravity/agitated-galileo/types/env.d.ts):
    ```typescript
    declare interface ImportMetaEnv {
-     readonly VITE_NEW_FEATURE: string;
+     readonly VITE_APP_NAME: string;
    }
    ```
-3. Use in TypeScript:
+3. Read in application code:
    ```typescript
-   if (import.meta.env.VITE_NEW_FEATURE === 'true') {
-     // ...
-   }
+   const title = import.meta.env.VITE_APP_NAME;
    ```
 
 ---
 
-## 5. Static Assets (`public/` Directory)
+## 7. Static Assets
 
-- **Do NOT use `import img from './logo.png'` in TypeScript.**
-- Place all static files (images, icons, fonts, `robots.txt`) in the [`public/`](file:///Users/nicat/Documents/antigravity/agitated-galileo/public) directory.
-- Reference them with root-relative paths in HTML and TypeScript:
+- Do not use JavaScript asset imports (`import img from './logo.png'`).
+- Place static assets inside the [`public/`](file:///Users/nicat/Documents/antigravity/agitated-galileo/public) directory.
+- Access assets using root-relative paths:
   ```html
-  <img src="/logo.svg" alt="App Logo" />
+  <img src="/logo.svg" alt="Logo" />
   ```
-  ```typescript
-  avatarElement.src = '/icons/user.svg';
-  ```
-- **Dev:** Assets in `public/` are served immediately.
-- **Build:** All contents of `public/` are copied recursively to `dist/`.
+- Assets in `public/` are served directly in development and copied to `dist/` during build.
 
 ---
 
-## 6. Development API Proxy (`server.proxy`)
+## 8. API Dev Proxy
 
-To bypass browser CORS when connecting to a local backend API:
-
-### Method A: Zero-Code `.env` Proxy
-
-Set `VITE_PROXY_TARGET` in [`.env`](file:///Users/nicat/Documents/antigravity/agitated-galileo/.env):
+Proxy requests to local backend APIs by defining `VITE_PROXY_TARGET` in [`.env`](file:///Users/nicat/Documents/antigravity/agitated-galileo/.env):
 
 ```bash
 VITE_PROXY_TARGET=http://localhost:8080
 ```
 
-Any frontend request to `/api/*` (e.g. `fetch('/api/tasks')`) is automatically forwarded to `http://localhost:8080/api/tasks`.
-
-### Method B: Custom Proxy Rules in `vite.ts`
-
-Configure `CONFIG.proxy` in [`vite.ts`](file:///Users/nicat/Documents/antigravity/agitated-galileo/vite.ts):
-
-```typescript
-export const CONFIG = {
-  // ...
-  proxy: {
-    '/api': {
-      target: 'http://localhost:8080',
-      changeOrigin: true,
-      rewrite: (path) => path.replace(/^\/api/, '/v1'),
-    },
-  },
-};
-```
-
-The proxy uses native duplex streaming (`duplex: 'half'`), preserves query strings, forwards custom headers, and returns `502 Bad Gateway` if the backend is down.
-
----
-
-## 7. Dev Server Protocols & Performance
-
-- **ETags & 304 Not Modified:** Every dev request generates a 64-bit content ETag (`Bun.hash`). Unchanged files return `304 Not Modified` with 0 body bytes.
-- **Dev CORS:** All dev responses send `Access-Control-Allow-Origin: *` and handle `OPTIONS` preflight requests (status 204).
-- **Port Collision Handling:** If port `5173` is occupied, `vite.ts` automatically increments to `5174`, `5175`, etc.
-- **SPA Routing:** Unknown non-file paths automatically fall back to `index.html`.
+Requests to `/api/*` are forwarded to the target URL with headers preserved, query parameters forwarded, and full request body streaming. Custom route rewrites can be added to `CONFIG.proxy` in [`vite.ts`](file:///Users/nicat/Documents/antigravity/agitated-galileo/vite.ts).
