@@ -128,7 +128,8 @@ async function compileTypeScript(filePath: string, force = false): Promise<strin
 		return null;
 	}
 
-	const code = await build.outputs[0].text();
+	let code = await build.outputs[0].text();
+	code = code.replace(/const state = (\{[^;]+\});/, "const state = (window.__hmr_state__ ??= $1);");
 	cachedJs.set(filePath, { code, timestamp: Date.now() });
 	return code;
 }
