@@ -407,3 +407,111 @@ describe('port collision handling', () => {
     }
   });
 });
+
+describe('api dev proxy', () => {
+  test('forwards GET requests and query params to backend', async () => {
+    const backend = startServerWithFallback({
+      port: 0,
+      fetch(req) {
+        const url = new URL(req.url);
+        if (url.pathname === '/api/tasks' && url.searchParams.get('status') === 'active') {
+          return Response.json({ count: 5 });
+        }
+        return new Response('Not found', { status: 404 });
+      },
+    });
+
+    const devServer = createDevServer(0, false, {
+      '/api': `http://localhost:${backend.port}`,
+    });
+
+    try {
+      const res = await fetch(`http://localhost:${devServer.port}/api/tasks?status=active`);
+      expect(res.status).toBe(200);
+      const data = (await res.json()) as { count: number };
+      expect(data.count).toBe(5);
+    } finally {
+      backend.stop(true);
+      devServer.stop(true);
+    }
+  });
+
+  test('forwards POST requests with body and custom headers', async () => {
+    const backend = startServerWithFallback({
+      port: 0,
+      async fetch(req) {
+        const auth = req.headers.get('authorization');
+        const body = (await req.json()) as { name: string };
+        return Response.json({ receivedAuth: auth, task: body.name }, { status: 201 });
+      },
+    });
+
+    const devServer = createDevServer(0, false, {
+      '/api': `http://localhost:${backend.port}`,
+    });
+
+    try {
+      const res = await fetch(`http://localhost:${devServer.port}/api/create`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer test-secret-token',
+        },
+        body: JSON.stringify({ name: 'Buy Milk' }),
+      });
+
+      expect(res.status).toBe(201);
+      const data = (await res.json()) as { receivedAuth: string; task: string };
+      expect(data.receivedAuth).toBe('Bearer test-secret-token');
+      expect(data.task).toBe('Buy Milk');
+    } finally {
+      backend.stop(true);
+      devServer.stop(true);
+    }
+  });
+
+  test('rewrites request path when rewrite rule is configured', async () => {
+    const backend = startServerWithFallback({
+      port: 0,
+      fetch(req) {
+        const url = new URL(req.url);
+        if (url.pathname === '/v1/users') {
+          return Response.json([{ id: 101 }]);
+        }
+        return new Response('Path not rewritten', { status: 404 });
+      },
+    });
+
+    const devServer = createDevServer(0, false, {
+      '/api': {
+        target: `http://localhost:${backend.port}`,
+        rewrite: (path) => path.replace(/^\/api/, '/v1'),
+      },
+    });
+
+    try {
+      const res = await fetch(`http://localhost:${devServer.port}/api/users`);
+      expect(res.status).toBe(200);
+      const data = (await res.json()) as Array<{ id: number }>;
+      expect(data[0].id).toBe(101);
+    } finally {
+      backend.stop(true);
+      devServer.stop(true);
+    }
+  });
+
+  test('returns 502 Bad Gateway when backend is offline', async () => {
+    const devServer = createDevServer(0, false, {
+      '/api': 'http://localhost:59998',
+    });
+
+    try {
+      const res = await fetch(`http://localhost:${devServer.port}/api/offline-service`);
+      expect(res.status).toBe(502);
+      const text = await res.text();
+      expect(text).toContain('Bad Gateway');
+    } finally {
+      devServer.stop(true);
+    }
+  });
+});

@@ -4,6 +4,16 @@ import { networkInterfaces } from 'node:os';
 import { basename, join } from 'node:path';
 import { file as bunFile, type Server, type ServerWebSocket, serve } from 'bun';
 
+export type ProxyTarget =
+  | string
+  | {
+      target: string;
+      changeOrigin?: boolean;
+      rewrite?: (path: string) => string;
+    };
+
+export type ProxyConfig = Record<string, ProxyTarget>;
+
 export const CONFIG = {
   root: import.meta.dir,
   srcDir: join(import.meta.dir, 'src'),
@@ -11,7 +21,10 @@ export const CONFIG = {
   distDir: join(import.meta.dir, 'dist'),
   devPort: Number(process.env.PORT) || 5173,
   previewPort: Number(process.env.PORT) || 4173,
-} as const;
+  proxy: (process.env.VITE_PROXY_TARGET
+    ? { '/api': process.env.VITE_PROXY_TARGET }
+    : {}) as ProxyConfig,
+};
 
 const HMR_CLIENT_SCRIPT = /*html*/ `
 <script>
@@ -310,7 +323,11 @@ export function startServerWithFallback(
   );
 }
 
-export function createDevServer(port = CONFIG.devPort, enableLiveReload = true): Server<unknown> {
+export function createDevServer(
+  port = CONFIG.devPort,
+  enableLiveReload = true,
+  proxy: ProxyConfig = CONFIG.proxy,
+): Server<unknown> {
   const activeSockets = new Set<ServerWebSocket<unknown>>();
 
   compileTailwind();
@@ -413,6 +430,37 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
     async fetch(req, server) {
       const url = new URL(req.url);
       const pathname = url.pathname;
+
+      for (const [prefix, config] of Object.entries(proxy)) {
+        if (pathname.startsWith(prefix)) {
+          const target = typeof config === 'string' ? config : config.target;
+          const rewrittenPath =
+            typeof config === 'object' && config.rewrite ? config.rewrite(pathname) : pathname;
+
+          const targetUrl = new URL(rewrittenPath + url.search, target);
+          const headers = new Headers(req.headers);
+
+          if (typeof config === 'object' && config.changeOrigin) {
+            headers.set('host', targetUrl.host);
+          }
+
+          try {
+            return await fetch(targetUrl.toString(), {
+              method: req.method,
+              headers,
+              body: req.body,
+              // @ts-expect-error Bun supports duplex streaming
+              duplex: 'half',
+            });
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return new Response(`Bad Gateway: Proxy error connecting to ${target}\n${msg}`, {
+              status: 502,
+              headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+            });
+          }
+        }
+      }
 
       if (pathname === '/ws-hmr' || pathname === '/ws-reload') {
         if (server.upgrade(req, { data: undefined })) return undefined;
