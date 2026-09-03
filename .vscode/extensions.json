@@ -1,3 +1,8 @@
 {
-  "recommendations": ["bradlc.vscode-tailwindcss", "biomejs.biome", "pushqrdx.inline-html"]
+  "recommendations": [
+    "bradlc.vscode-tailwindcss",
+    "biomejs.biome",
+    "esbenp.prettier-vscode",
+    "pushqrdx.inline-html"
+  ]
 }
