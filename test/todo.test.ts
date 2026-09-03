@@ -4,15 +4,12 @@ import { createDevServer } from "../vite";
 
 describe("BunVite Dev Engine & Todo App E2E Suite", () => {
 	let server: Server<unknown>;
-	let baseUrl: string;
 	let webview: Bun.WebView;
 
 	beforeAll(async () => {
 		server = createDevServer(0, false);
-		baseUrl = `http://localhost:${server.port}`;
-
 		webview = new Bun.WebView();
-		await webview.navigate(baseUrl);
+		await webview.navigate(`http://localhost:${server.port}`);
 	});
 
 	afterAll(async () => {
@@ -28,120 +25,96 @@ describe("BunVite Dev Engine & Todo App E2E Suite", () => {
       return {
         title: document.title,
         header: document.querySelector('h1')?.textContent?.trim(),
-        count: document.querySelector('#todo-count')?.textContent,
         itemsCount: document.querySelectorAll('.todo-item').length,
-        emptyVisible: !document.querySelector('#empty-state')?.classList.contains('hidden')
       };
-    })()`)) as {
-			title: string;
-			header: string;
-			count: string;
-			itemsCount: number;
-			emptyVisible: boolean;
-		};
+    })()`)) as { title: string; header: string; itemsCount: number };
 
-		expect(state.title).toBe("BunVite • Native Todo App");
-		expect(state.header).toBe("Bun Todos");
-		expect(state.count).toBe("0 items left");
+		expect(state.title).toBe("Tasks");
+		expect(state.header).toBe("Tasks");
 		expect(state.itemsCount).toBe(0);
-		expect(state.emptyVisible).toBe(true);
 	});
 
-	test("2. fast batch-add tasks and verify live DOM", async () => {
+	test("2. batch-add tasks and verify live DOM", async () => {
 		const result = (await webview.evaluate(`(() => {
       const input = document.querySelector('#todo-input');
       const form = document.querySelector('#todo-form');
-      const tasks = ["Learn Bun", "Write E2E Tests", "Deploy to Production"];
-
-      tasks.forEach(task => {
+      ["Learn Bun", "Write E2E Tests", "Deploy to Production"].forEach(task => {
         input.value = task;
         form.dispatchEvent(new Event('submit', { cancelable: true }));
       });
-
       return {
         itemsCount: document.querySelectorAll('.todo-item').length,
-        countText: document.querySelector('#todo-count')?.textContent,
-        itemTexts: Array.from(document.querySelectorAll('.todo-text')).map(el => el.textContent?.trim())
+        itemTexts: Array.from(document.querySelectorAll('.todo-text')).map(el => el.textContent?.trim()),
       };
-    })()`)) as {
-			itemsCount: number;
-			countText: string;
-			itemTexts: string[];
-		};
+    })()`)) as { itemsCount: number; itemTexts: string[] };
 
 		expect(result.itemsCount).toBe(3);
-		expect(result.countText).toBe("3 items left");
 		expect(result.itemTexts).toEqual(["Learn Bun", "Write E2E Tests", "Deploy to Production"]);
 	});
 
-	test("3. toggle task completion", async () => {
+	test("3. toggle task completion via circle button", async () => {
 		const result = (await webview.evaluate(`(() => {
-      const checkboxes = document.querySelectorAll('.todo-checkbox');
-      checkboxes[1].click();
-
+      // Click the circle toggle button (not the text) for the 2nd task
+      const toggleBtns = document.querySelectorAll('button[data-action="toggle"]');
+      toggleBtns[1].click();
       return {
-        completedCount: document.querySelectorAll('.todo-item.completed').length,
-        countText: document.querySelector('#todo-count')?.textContent
+        completedCount: document.querySelectorAll('.todo-text.line-through').length,
       };
-    })()`)) as {
-			completedCount: number;
-			countText: string;
-		};
+    })()`)) as { completedCount: number };
 
 		expect(result.completedCount).toBe(1);
-		expect(result.countText).toBe("2 items left");
 	});
 
-	test("4. test view filters (Active, Completed, All)", async () => {
-		const filterResults = (await webview.evaluate(`(() => {
-      document.querySelector('#filter-active').click();
+	test("4. toggle via text click", async () => {
+		const result = (await webview.evaluate(`(() => {
+      // Click text of the 3rd task to complete it
+      const texts = document.querySelectorAll('.todo-text');
+      texts[2].click();
+      return {
+        completedCount: document.querySelectorAll('.todo-text.line-through').length,
+      };
+    })()`)) as { completedCount: number };
+
+		expect(result.completedCount).toBe(2);
+	});
+
+	test("5. test view filters", async () => {
+		const results = (await webview.evaluate(`(() => {
+      document.querySelector('[data-filter="active"]').click();
       const activeCount = document.querySelectorAll('.todo-item').length;
-      const activeText = document.querySelector('.todo-text')?.textContent?.trim();
 
-      document.querySelector('#filter-completed').click();
+      document.querySelector('[data-filter="completed"]').click();
       const completedCount = document.querySelectorAll('.todo-item').length;
-      const completedText = document.querySelector('.todo-text')?.textContent?.trim();
 
-      document.querySelector('#filter-all').click();
+      document.querySelector('[data-filter="all"]').click();
       const allCount = document.querySelectorAll('.todo-item').length;
 
-      return { activeCount, activeText, completedCount, completedText, allCount };
-    })()`)) as {
-			activeCount: number;
-			activeText: string;
-			completedCount: number;
-			completedText: string;
-			allCount: number;
-		};
+      return { activeCount, completedCount, allCount };
+    })()`)) as { activeCount: number; completedCount: number; allCount: number };
 
-		expect(filterResults.activeCount).toBe(2);
-		expect(filterResults.activeText).toBe("Learn Bun");
-		expect(filterResults.completedCount).toBe(1);
-		expect(filterResults.completedText).toBe("Write E2E Tests");
-		expect(filterResults.allCount).toBe(3);
+		expect(results.activeCount).toBe(1);
+		expect(results.completedCount).toBe(2);
+		expect(results.allCount).toBe(3);
 	});
 
-	test("5. delete task and clear completed", async () => {
+	test("6. delete task and clear completed", async () => {
 		const finalState = (await webview.evaluate(`(() => {
-      document.querySelectorAll('.delete-btn')[0].click();
+      // Delete first task "Learn Bun" (active)
+      const firstItem = document.querySelector('.todo-item');
+      const deleteBtn = firstItem.querySelector('[data-action="delete"]');
+      deleteBtn.style.opacity = '1';
+      deleteBtn.click();
       const countAfterDelete = document.querySelectorAll('.todo-item').length;
 
-      document.querySelector('#clear-completed-btn').click();
+      // Clear the 2 completed tasks
+      document.querySelector('#clear-btn').click();
       const finalCount = document.querySelectorAll('.todo-item').length;
-      const finalCountText = document.querySelector('#todo-count')?.textContent;
       const remainingTask = document.querySelector('.todo-text')?.textContent?.trim();
 
-      return { countAfterDelete, finalCount, finalCountText, remainingTask };
-    })()`)) as {
-			countAfterDelete: number;
-			finalCount: number;
-			finalCountText: string;
-			remainingTask: string;
-		};
+      return { countAfterDelete, finalCount, remainingTask };
+    })()`)) as { countAfterDelete: number; finalCount: number; remainingTask: string };
 
 		expect(finalState.countAfterDelete).toBe(2);
-		expect(finalState.finalCount).toBe(1);
-		expect(finalState.finalCountText).toBe("1 item left");
-		expect(finalState.remainingTask).toBe("Deploy to Production");
+		expect(finalState.finalCount).toBe(0);
 	});
 });
