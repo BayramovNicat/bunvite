@@ -49,11 +49,11 @@ const CheckIcon = () =>
 	`<svg class="size-3 pointer-events-none" viewBox="0 0 12 12" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1.5,6 4.5,9 10.5,3"/></svg>`;
 
 const TodoItem = (todo: Todo) => `
-	<li class="todo-item group flex items-center gap-3 px-5 py-3.5 hover:bg-white/[0.02] transition-colors" data-id="${todo.id}">
+	<li class="todo-item group flex items-center gap-3 px-5 py-3.5 hover:bg-white/2 transition-colors" data-id="${todo.id}">
 		<button
 			type="button"
 			data-action="toggle"
-			class="shrink-0 size-[18px] rounded-full border transition-all duration-150 cursor-pointer flex items-center justify-center
+			class="shrink-0 size-4.5 rounded-full border transition-all duration-150 cursor-pointer flex items-center justify-center
 				${todo.completed ? "bg-indigo-500 border-indigo-500" : "border-zinc-600 hover:border-zinc-400 bg-transparent"}"
 		>
 			${todo.completed ? CheckIcon() : ""}
