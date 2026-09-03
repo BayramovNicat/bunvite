@@ -76,7 +76,7 @@ Editing `src/style.css` compiles Tailwind CSS in memory and notifies the browser
    ```bash
    VITE_NEW_FEATURE=true
    ```
-2. Augment the TypeScript declaration in [`src/env.d.ts`](file:///Users/nicat/Documents/antigravity/agitated-galileo/src/env.d.ts):
+2. Augment the TypeScript declaration in [`types/env.d.ts`](file:///Users/nicat/Documents/antigravity/agitated-galileo/types/env.d.ts):
    ```typescript
    declare interface ImportMetaEnv {
      readonly VITE_NEW_FEATURE: string;

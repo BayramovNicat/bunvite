@@ -715,7 +715,7 @@ export function previewProduction(port = CONFIG.previewPort): Server<unknown> {
           return new Response(gzipped as BodyInit, { headers });
         }
 
-        return new Response(file, { headers });
+        return new Response(file as unknown as BodyInit, { headers });
       }
       return new Response('Not Found', { status: 404 });
     },

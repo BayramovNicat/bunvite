@@ -11,7 +11,7 @@ Designed as a clean, radical-simplicity starter template for modern frontend app
 - **⚡ Instant Dev Server & HMR:** On-the-fly TypeScript bundling with in-browser live reload, stylesheet hot-swapping without page refresh, state preservation (`__hmr_state__`), and active input focus/selection preservation across module reloads.
 - **🎨 Tailwind CSS v4:** First-class `@tailwindcss/cli` integration with on-demand compilation, in-memory caching, and sub-millisecond updates.
 - **🛑 In-Browser Error Overlay:** Vite-style frosted glass overlay displaying exact syntax errors with file paths, line/column numbers, codeframes, caret pointers (`^`), and `Escape` key dismissal.
-- **🔤 `import.meta.env` & `.env`:** Built-in support for `.env` files, `DEV`, `PROD`, `MODE`, `BASE_URL`, client-side `VITE_*` variable injection, `%VITE_*%` HTML placeholders, and typed definitions in `src/env.d.ts`.
+- **🔤 `import.meta.env` & `.env`:** Built-in support for `.env` files, `DEV`, `PROD`, `MODE`, `BASE_URL`, client-side `VITE_*` variable injection, `%VITE_*%` HTML placeholders, and typed definitions in `types/env.d.ts`.
 - **🔀 API Dev Proxy (`server.proxy`):** Forward `/api/*` requests to your backend server with path rewrites, header forwarding, streaming request bodies, and `VITE_PROXY_TARGET` `.env` configuration.
 - **🔌 Automatic Port Collision Handling:** Automatically detects occupied ports (e.g. `5173`) and binds to the next available port (`5174`, `5175`, etc.).
 - **🏷️ ETags & 304 Not Modified:** Generates 64-bit content ETags for dev assets and responds with `304 Not Modified` on unchanged files, eliminating redundant re-transfers.
@@ -53,15 +53,15 @@ Designed as a clean, radical-simplicity starter template for modern frontend app
 
 - [Bun](https://bun.sh) (v1.2+ recommended)
 
-### Installation
+### Zero-Install Quickstart
 
 ```bash
 # Clone the repository
 git clone <repo-url>
 cd <repo-name>
 
-# Install dependencies
-bun install
+# Run immediately (zero npm/bun install needed!)
+bun run dev
 ```
 
 ---

@@ -1,5 +1,3 @@
-/// <reference types="bun" />
-
 declare interface ImportMetaEnv {
   readonly DEV: boolean;
   readonly PROD: boolean;

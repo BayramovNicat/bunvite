@@ -7,18 +7,14 @@
     "build": "bun run vite.ts build",
     "preview": "bun run vite.ts preview",
     "test": "bun test --parallel",
-    "lint": "biome check .",
-    "format": "biome format --write .",
-    "check:types": "tsc --noEmit",
-    "check:lint": "biome check .",
+    "lint": "bunx biome check .",
+    "format": "bunx biome format --write .",
+    "check:types": "bunx tsc --noEmit",
+    "check:lint": "bunx biome check .",
     "check:test": "bun test --parallel",
     "check": "bun run --parallel \"check:*\""
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.12",
-    "@tailwindcss/cli": "^4.3.3",
-    "@types/bun": "^1.4.0",
-    "tailwindcss": "^4.3.3",
-    "typescript": "^7.0.2"
+    "tailwindcss": "^4.3.3"
   }
 }
