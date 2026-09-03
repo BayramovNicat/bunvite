@@ -300,4 +300,26 @@ describe('todo app', () => {
 
     expect(result.countAfterClear).toBe(2);
   });
+
+  test('reorders tasks via drag and drop', async () => {
+    const result = (await webview.evaluate(`(() => {
+      const items = Array.from(document.querySelectorAll('.todo-item'));
+      if (items.length < 2) return { countBefore: 0, countAfter: 0 };
+
+      const countBefore = items.length;
+      const firstItem = items[0];
+      const secondItem = items[1];
+
+      firstItem.dispatchEvent(new Event('dragstart', { bubbles: true }));
+      const dropEvent = new Event('drop', { bubbles: true, cancelable: true });
+      Object.defineProperty(dropEvent, 'clientY', { value: 9999 });
+      secondItem.dispatchEvent(dropEvent);
+
+      const countAfter = document.querySelectorAll('.todo-item').length;
+      return { countBefore, countAfter };
+    })()`)) as { countBefore: number; countAfter: number };
+
+    expect(result.countBefore).toBeGreaterThan(1);
+    expect(result.countAfter).toBe(result.countBefore);
+  });
 });

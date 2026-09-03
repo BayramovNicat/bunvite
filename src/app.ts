@@ -217,8 +217,8 @@ const TodoItem = (t: Todo, todayStr: string): string => {
   const priorityLabel = priority === 'high' ? 'High' : priority === 'medium' ? 'Med' : 'Low';
 
   return /*html*/ `
-    <li class="todo-item group list-none flex items-center gap-3 px-5 py-3.5 hover:bg-white/2 transition-colors cursor-grab active:cursor-grabbing" data-id="${t.id}" draggable="true">
-      <span class="opacity-0 group-hover:opacity-40 hover:opacity-100 text-zinc-500 shrink-0 select-none">${Grip}</span>
+    <li class="todo-item group list-none flex items-center gap-3 px-5 py-3.5 hover:bg-white/2 transition-colors cursor-grab active:cursor-grabbing border-y-2 border-transparent" data-id="${t.id}" draggable="true">
+      <span class="drag-handle opacity-0 group-hover:opacity-40 hover:!opacity-100 text-zinc-500 shrink-0 select-none cursor-grab active:cursor-grabbing transition-opacity">${Grip}</span>
       <button type="button" data-action="toggle" class="shrink-0 size-4.5 rounded-full border transition-all cursor-pointer flex items-center justify-center ${t.completed ? 'bg-indigo-500 border-indigo-500' : 'border-zinc-600 hover:border-zinc-400 bg-transparent'}">
         ${t.completed ? Check : ''}
       </button>
@@ -524,38 +524,129 @@ searchInput.oninput = () => {
 };
 
 let draggedId: string | null = null;
+let dropTargetId: string | null = null;
+let dropBelow = false;
+
+const clearDropIndicators = (): void => {
+  for (const el of root.querySelectorAll<HTMLElement>('.todo-item')) {
+    el.classList.remove(
+      'border-t-indigo-500',
+      'border-b-indigo-500',
+      'opacity-40',
+      'bg-zinc-800/40',
+    );
+  }
+};
 
 root.ondragstart = (e) => {
-  const li = (e.target as HTMLElement).closest<HTMLElement>('li[data-id]');
-  if (!li) return;
+  const target = e.target as HTMLElement;
+  if (
+    target.closest('input, button:not(.drag-handle), select') &&
+    !target.closest('.drag-handle')
+  ) {
+    e.preventDefault();
+    return;
+  }
+
+  const li = target.closest<HTMLElement>('li[data-id]');
+  if (!li || state.editingId === li.dataset.id) {
+    e.preventDefault();
+    return;
+  }
+
   draggedId = li.dataset.id ?? null;
+  dropTargetId = null;
+  dropBelow = false;
+
   if (e.dataTransfer) {
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', draggedId ?? '');
   }
+
+  setTimeout(() => {
+    li.classList.add('opacity-40', 'bg-zinc-800/40');
+  }, 0);
 };
 
 root.ondragover = (e) => {
   e.preventDefault();
   if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+
+  const targetLi = (e.target as HTMLElement).closest<HTMLElement>('li[data-id]');
+  if (!targetLi || !draggedId || targetLi.dataset.id === draggedId) {
+    for (const el of root.querySelectorAll<HTMLElement>('.todo-item')) {
+      el.classList.remove('border-t-indigo-500', 'border-b-indigo-500');
+    }
+    dropTargetId = null;
+    return;
+  }
+
+  const rect = targetLi.getBoundingClientRect();
+  const isBelow = e.clientY > rect.top + rect.height / 2;
+  const targetId = targetLi.dataset.id ?? null;
+
+  if (dropTargetId !== targetId || dropBelow !== isBelow) {
+    for (const el of root.querySelectorAll<HTMLElement>('.todo-item')) {
+      el.classList.remove('border-t-indigo-500', 'border-b-indigo-500');
+    }
+    dropTargetId = targetId;
+    dropBelow = isBelow;
+
+    if (isBelow) {
+      targetLi.classList.add('border-b-indigo-500');
+    } else {
+      targetLi.classList.add('border-t-indigo-500');
+    }
+  }
+};
+
+root.ondragleave = (e) => {
+  const related = e.relatedTarget as HTMLElement | null;
+  if (!related || !root.contains(related)) {
+    clearDropIndicators();
+    dropTargetId = null;
+  }
+};
+
+root.ondragend = () => {
+  clearDropIndicators();
+  draggedId = null;
+  dropTargetId = null;
 };
 
 root.ondrop = (e) => {
   e.preventDefault();
   const targetLi = (e.target as HTMLElement).closest<HTMLElement>('li[data-id]');
-  if (!targetLi || !draggedId) return;
+  if (!targetLi || !draggedId) {
+    clearDropIndicators();
+    return;
+  }
+
   const targetId = targetLi.dataset.id;
-  if (!targetId || targetId === draggedId) return;
+  if (!targetId || targetId === draggedId) {
+    clearDropIndicators();
+    return;
+  }
 
   const fromIndex = state.todos.findIndex((t) => t.id === draggedId);
   const toIndex = state.todos.findIndex((t) => t.id === targetId);
+
   if (fromIndex !== -1 && toIndex !== -1) {
+    const rect = targetLi.getBoundingClientRect();
+    const isBelow = e.clientY > rect.top + rect.height / 2;
+
     const [moved] = state.todos.splice(fromIndex, 1);
-    state.todos.splice(toIndex, 0, moved);
+    let insertIndex = state.todos.findIndex((t) => t.id === targetId);
+    if (isBelow) insertIndex++;
+
+    state.todos.splice(insertIndex, 0, moved);
     saveTodos(state.todos);
-    render();
   }
+
+  clearDropIndicators();
   draggedId = null;
+  dropTargetId = null;
+  render();
 };
 
 root.ondblclick = (e) => {
