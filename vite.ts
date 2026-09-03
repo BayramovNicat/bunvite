@@ -622,11 +622,20 @@ export async function buildProduction() {
   );
   await twProc.exited;
 
+  const cssContent = await bunFile(cssPath).text();
+
   let html = await bunFile(join(CONFIG.root, 'index.html')).text();
   html = replaceEnvInHtml(html);
   const basePrefix = CONFIG.base === '/' ? '/' : CONFIG.base;
-  html = html.replace('/src/style.css', `${basePrefix}assets/${cssFile}`);
+  html = html.replace(
+    /<link\s+rel=["']stylesheet["']\s+href=["']\/src\/style\.css["']\s*\/?>/,
+    `<style>${cssContent}</style>`,
+  );
   html = html.replace('/src/app.ts', `${basePrefix}assets/${jsFile}`);
+  html = html.replace(
+    '</head>',
+    `  <link rel="modulepreload" href="${basePrefix}assets/${jsFile}" />\n  </head>`,
+  );
 
   await Bun.write(join(CONFIG.distDir, 'index.html'), html);
 

@@ -182,7 +182,9 @@ describe('production build & preview', () => {
     expect(await distIndex.exists()).toBe(true);
     const html = await distIndex.text();
     expect(html).toMatch(/\/assets\/app\.[a-z0-9]+\.js/);
-    expect(html).toMatch(/\/assets\/style\.[a-z0-9]+\.css/);
+    expect(html).toContain('<style>');
+    expect(html).not.toContain('/src/style.css');
+    expect(html).toMatch(/<link rel="modulepreload" href="\/assets\/app\.[a-z0-9]+\.js" \/>/);
 
     const distRobots = bunFile(join(CONFIG.distDir, 'robots.txt'));
     expect(await distRobots.exists()).toBe(true);
@@ -198,9 +200,9 @@ describe('production build & preview', () => {
     expect(jsContent.length).toBeGreaterThan(0);
     expect(jsContent).not.toContain('/*html*/');
 
-    const cssMatch = html.match(/\/assets\/(style\.[a-z0-9]+\.css)/);
-    expect(cssMatch).not.toBeNull();
-    const cssContent = await bunFile(join(CONFIG.distDir, 'assets', cssMatch?.[1] ?? '')).text();
+    const styleMatch = html.match(/<style>([\s\S]*?)<\/style>/);
+    expect(styleMatch).not.toBeNull();
+    const cssContent = styleMatch?.[1] ?? '';
     expect(cssContent.length).toBeGreaterThan(0);
     expect(cssContent.includes('\n\n')).toBe(false);
   });
