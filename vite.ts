@@ -11,7 +11,7 @@ const CONFIG = {
 	previewPort: Number(process.env.PORT) || 4173,
 } as const;
 
-const HMR_CLIENT_SCRIPT = `
+const HMR_CLIENT_SCRIPT = /*html*/ `
 <script>
   (() => {
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
