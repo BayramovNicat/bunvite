@@ -6,8 +6,10 @@ import {
   CONFIG,
   createDevServer,
   formatBuildError,
+  getClientEnv,
   getNetworkUrl,
   previewProduction,
+  replaceEnvInHtml,
 } from '../vite';
 
 describe('dev server', () => {
@@ -305,6 +307,71 @@ describe('error overlay & HMR runtime', () => {
       expect(html).toContain('newInput.setSelectionRange');
     } finally {
       devServer.stop(true);
+    }
+  });
+});
+
+describe('environment variables & HTML transforms', () => {
+  test('defines development environment flags', () => {
+    const env = getClientEnv('development');
+    expect(env['import.meta.env.DEV']).toBe('true');
+    expect(env['import.meta.env.PROD']).toBe('false');
+    expect(env['import.meta.env.MODE']).toBe('"development"');
+    expect(env['import.meta.env.BASE_URL']).toBe('"/"');
+  });
+
+  test('defines production environment flags', () => {
+    const env = getClientEnv('production');
+    expect(env['import.meta.env.DEV']).toBe('false');
+    expect(env['import.meta.env.PROD']).toBe('true');
+    expect(env['import.meta.env.MODE']).toBe('"production"');
+  });
+
+  test('exposes VITE_ prefixed environment variables', () => {
+    process.env.VITE_TEST_CUSTOM_API = 'https://api.test.dev';
+    try {
+      const env = getClientEnv('development');
+      expect(env['import.meta.env.VITE_TEST_CUSTOM_API']).toBe('"https://api.test.dev"');
+      const parsedFull = JSON.parse(env['import.meta.env']);
+      expect(parsedFull.VITE_TEST_CUSTOM_API).toBe('https://api.test.dev');
+    } finally {
+      delete process.env.VITE_TEST_CUSTOM_API;
+    }
+  });
+
+  test('replaces %VITE_*% tokens in HTML', () => {
+    process.env.VITE_TEST_TITLE = 'Custom Test App';
+    try {
+      const input = '<title>%VITE_TEST_TITLE%</title><span>%UNKNOWN_VAR%</span>';
+      const output = replaceEnvInHtml(input);
+      expect(output).toBe('<title>Custom Test App</title><span>%UNKNOWN_VAR%</span>');
+    } finally {
+      delete process.env.VITE_TEST_TITLE;
+    }
+  });
+
+  test('compiles import.meta.env expressions into client bundles', async () => {
+    const testFile = join(CONFIG.srcDir, 'temp-env-test.ts');
+    await Bun.write(
+      testFile,
+      'export const isDev = import.meta.env.DEV;\nexport const mode = import.meta.env.MODE;',
+    );
+
+    try {
+      const devServer = createDevServer(0, true);
+      try {
+        const res = await fetch(`http://localhost:${devServer.port}/src/temp-env-test.ts`);
+        expect(res.status).toBe(200);
+        const js = await res.text();
+        expect(js).toContain('true');
+        expect(js).toContain('"development"');
+      } finally {
+        devServer.stop(true);
+      }
+    } finally {
+      await Bun.file(testFile)
+        .delete()
+        .catch(() => {});
     }
   });
 });

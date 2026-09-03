@@ -193,6 +193,52 @@ export function formatBuildError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+export function getClientEnv(mode: 'development' | 'production'): Record<string, string> {
+  const isDev = mode === 'development';
+  const fullEnv: Record<string, unknown> = {
+    DEV: isDev,
+    PROD: !isDev,
+    MODE: mode,
+    BASE_URL: '/',
+  };
+
+  const clientEnv: Record<string, string> = {
+    'import.meta.env.DEV': String(isDev),
+    'import.meta.env.PROD': String(!isDev),
+    'import.meta.env.MODE': JSON.stringify(mode),
+    'import.meta.env.BASE_URL': JSON.stringify('/'),
+  };
+
+  for (const [key, value] of Object.entries(process.env)) {
+    if (key.startsWith('VITE_') && value !== undefined) {
+      clientEnv[`import.meta.env.${key}`] = JSON.stringify(value);
+      fullEnv[key] = value;
+    }
+  }
+
+  clientEnv['import.meta.env'] = JSON.stringify(fullEnv);
+  return clientEnv;
+}
+
+export function replaceEnvInHtml(html: string): string {
+  return html.replace(/%([A-Z0-9_]+)%/g, (match, name) => {
+    if (name.startsWith('VITE_') && process.env[name] !== undefined) {
+      return process.env[name];
+    }
+    return match;
+  });
+}
+
+async function renderDevHtml(enableLiveReload: boolean): Promise<string> {
+  const indexFile = bunFile(join(CONFIG.root, 'index.html'));
+  let html = await indexFile.text();
+  html = replaceEnvInHtml(html);
+  if (enableLiveReload) {
+    html = html.replace('</body>', `${HMR_CLIENT_SCRIPT}</body>`);
+  }
+  return html;
+}
+
 async function compileTypeScript(
   filePath: string,
   force = false,
@@ -207,6 +253,7 @@ async function compileTypeScript(
       target: 'browser',
       sourcemap: 'inline',
       minify: false,
+      define: getClientEnv('development'),
     });
 
     if (!build.success || build.outputs.length === 0) {
@@ -341,13 +388,7 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
       }
 
       if (pathname === '/' || pathname === '/index.html') {
-        const indexFile = bunFile(join(CONFIG.root, 'index.html'));
-        let html = await indexFile.text();
-
-        if (enableLiveReload) {
-          html = html.replace('</body>', `${HMR_CLIENT_SCRIPT}</body>`);
-        }
-
+        const html = await renderDevHtml(enableLiveReload);
         return new Response(html, {
           headers: {
             'Content-Type': 'text/html; charset=utf-8',
@@ -398,11 +439,7 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
       }
 
       if (req.headers.get('accept')?.includes('text/html')) {
-        const indexFile = bunFile(join(CONFIG.root, 'index.html'));
-        let html = await indexFile.text();
-        if (enableLiveReload) {
-          html = html.replace('</body>', `${HMR_CLIENT_SCRIPT}</body>`);
-        }
+        const html = await renderDevHtml(enableLiveReload);
         return new Response(html, {
           headers: {
             'Content-Type': 'text/html; charset=utf-8',
@@ -432,6 +469,7 @@ export async function buildProduction() {
     naming: 'app.[hash].js',
     target: 'browser',
     minify: true,
+    define: getClientEnv('production'),
   });
 
   if (!jsBuild.success || jsBuild.outputs.length === 0) {
@@ -461,6 +499,7 @@ export async function buildProduction() {
   await twProc.exited;
 
   let html = await bunFile(join(CONFIG.root, 'index.html')).text();
+  html = replaceEnvInHtml(html);
   html = html.replace('/src/style.css', `/assets/${cssFile}`);
   html = html.replace('/src/app.ts', `/assets/${jsFile}`);
 
