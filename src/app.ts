@@ -70,7 +70,7 @@ export const getFilteredTodos = (
 const Header = () => `
   <header class="text-center mb-8">
     <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-semibold mb-3 tracking-wide uppercase">
-      <span class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+      <span class="size-2 rounded-full bg-rose-500 animate-pulse"></span>
       BunVite Live Engine
     </div>
     <h1 class="text-4xl font-extrabold tracking-tight bg-linear-to-r from-rose-400 via-pink-400 to-amber-300 bg-clip-text text-transparent">
@@ -85,7 +85,7 @@ const TodoItem = (todo: Todo) => `
     <div class="flex items-center gap-3 min-w-0 flex-1">
       <input
         type="checkbox"
-        class="todo-checkbox w-5 h-5 accent-rose-500 rounded cursor-pointer"
+        class="todo-checkbox size-5 accent-rose-500 rounded cursor-pointer"
         data-action="toggle"
         ${todo.completed ? "checked" : ""}
       />
@@ -109,7 +109,7 @@ const TodoList = (todos: readonly Todo[]) => {
 		return `
       <ul id="todo-list" class="divide-y divide-slate-800/80 max-h-96 overflow-y-auto"></ul>
       <div id="empty-state" class="py-12 px-4 text-center text-slate-500 text-sm">
-        <svg aria-hidden="true" class="w-10 h-10 mx-auto text-slate-600 mb-2 stroke-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg aria-hidden="true" class="size-10 mx-auto text-slate-600 mb-2 stroke-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
         </svg>
         No tasks yet. Add one above!
