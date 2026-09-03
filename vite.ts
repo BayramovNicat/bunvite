@@ -635,7 +635,26 @@ export function openBrowser(url: string) {
   } catch (_) {}
 }
 
+const COMPRESSIBLE_EXTENSIONS = new Set([
+  '.html',
+  '.js',
+  '.css',
+  '.json',
+  '.svg',
+  '.txt',
+  '.xml',
+  '.map',
+]);
+
+function isCompressible(filePath: string): boolean {
+  const dotIndex = filePath.lastIndexOf('.');
+  if (dotIndex === -1) return false;
+  return COMPRESSIBLE_EXTENSIONS.has(filePath.slice(dotIndex).toLowerCase());
+}
+
 export function previewProduction(port = CONFIG.previewPort): Server<unknown> {
+  const gzipCache = new Map<string, Uint8Array>();
+
   const server = startServerWithFallback({
     port,
     async fetch(req) {
@@ -646,12 +665,28 @@ export function previewProduction(port = CONFIG.previewPort): Server<unknown> {
       }
       if (path === '/' || path === '') path = '/index.html';
 
-      const file = bunFile(join(CONFIG.distDir, path));
+      const filePath = join(CONFIG.distDir, path);
+      const file = bunFile(filePath);
       if (await file.exists()) {
         const headers: Record<string, string> = {};
         if (path.startsWith('/assets/')) {
           headers['Cache-Control'] = 'public, max-age=31536000, immutable';
         }
+
+        const acceptsGzip = req.headers.get('accept-encoding')?.includes('gzip');
+        if (acceptsGzip && isCompressible(path)) {
+          let gzipped = gzipCache.get(filePath);
+          if (!gzipped) {
+            const bytes = new Uint8Array(await file.arrayBuffer());
+            gzipped = Bun.gzipSync(bytes);
+            gzipCache.set(filePath, gzipped);
+          }
+          headers['Content-Encoding'] = 'gzip';
+          headers['Content-Type'] = file.type || 'application/octet-stream';
+          headers.Vary = 'Accept-Encoding';
+          return new Response(gzipped as BodyInit, { headers });
+        }
+
         return new Response(file, { headers });
       }
       return new Response('Not Found', { status: 404 });

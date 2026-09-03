@@ -204,6 +204,7 @@ describe('production build & preview', () => {
       expect(indexRes.status).toBe(200);
       const html = await indexRes.text();
       expect(html).toContain('<div id="app"></div>');
+      expect(indexRes.headers.get('content-encoding')).toBe('gzip');
 
       const match = html.match(/\/assets\/app\.[a-z0-9]+\.js/);
       expect(match).not.toBeNull();
@@ -212,6 +213,12 @@ describe('production build & preview', () => {
       const assetRes = await fetch(`${previewBase}${assetPath}`);
       expect(assetRes.status).toBe(200);
       expect(assetRes.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+      expect(assetRes.headers.get('content-encoding')).toBe('gzip');
+
+      const uncompressedRes = await fetch(`${previewBase}${assetPath}`, {
+        headers: { 'Accept-Encoding': 'identity' },
+      });
+      expect(uncompressedRes.headers.get('content-encoding')).toBeNull();
 
       const robotsRes = await fetch(`${previewBase}/robots.txt`);
       expect(robotsRes.status).toBe(200);
