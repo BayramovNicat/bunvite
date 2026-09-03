@@ -241,4 +241,63 @@ describe('todo app', () => {
     expect(result.hasUndoToast).toBe(true);
     expect(result.countAfterUndo).toBe(result.initialCount);
   });
+
+  test('navigates sidebar views and opens calendar', async () => {
+    const result = (await webview.evaluate(`(() => {
+      const calBtn = document.querySelector('button[data-view="calendar"]');
+      calBtn.click();
+      const calPanel = document.querySelector('.calendar-panel');
+      const isCalVisible = !calPanel?.classList.contains('hidden');
+
+      const inboxBtn = document.querySelector('button[data-view="inbox"]');
+      inboxBtn.click();
+      const isCalHidden = calPanel?.classList.contains('hidden');
+
+      return { isCalVisible, isCalHidden };
+    })()`)) as { isCalVisible: boolean; isCalHidden: boolean };
+
+    expect(result.isCalVisible).toBe(true);
+    expect(result.isCalHidden).toBe(true);
+  });
+
+  test('interacts with calendar controls and month navigation', async () => {
+    const result = (await webview.evaluate(`(() => {
+      document.querySelector('button[data-view="calendar"]').click();
+      const monthHeader = document.querySelector('.calendar-panel span.tracking-tight')?.textContent?.trim();
+
+      document.querySelector('button[data-action="next-month"]').click();
+      const nextMonthHeader = document.querySelector('.calendar-panel span.tracking-tight')?.textContent?.trim();
+
+      document.querySelector('button[data-action="prev-month"]').click();
+      const prevMonthHeader = document.querySelector('.calendar-panel span.tracking-tight')?.textContent?.trim();
+
+      const dayCell = document.querySelector('.calendar-panel button[data-action="select-date"]');
+      const targetDate = dayCell?.getAttribute('data-date') || '';
+      dayCell?.click();
+      const newSelected = document.querySelector('.calendar-panel button[data-date="' + targetDate + '"]');
+      const isSelected = Boolean(newSelected?.classList.contains('bg-indigo-600'));
+
+      document.querySelector('button[data-view="inbox"]').click();
+      return { monthHeader, nextMonthHeader, prevMonthHeader, isSelected };
+    })()`)) as { monthHeader: string; nextMonthHeader: string; prevMonthHeader: string; isSelected: boolean };
+
+    expect(result.monthHeader).toBe(result.prevMonthHeader);
+    expect(result.monthHeader !== result.nextMonthHeader).toBe(true);
+    expect(result.isSelected).toBe(true);
+  });
+
+  test('filters tasks by category', async () => {
+    const result = (await webview.evaluate(`(() => {
+      const workBtn = document.querySelector('button[data-action="select-category"][data-category="Work"]');
+      workBtn.click();
+      const countInWork = document.querySelectorAll('.todo-item').length;
+
+      document.querySelector('button[data-action="clear-category"]').click();
+      const countAfterClear = document.querySelectorAll('.todo-item').length;
+
+      return { countInWork, countAfterClear };
+    })()`)) as { countInWork: number; countAfterClear: number };
+
+    expect(result.countAfterClear).toBe(2);
+  });
 });

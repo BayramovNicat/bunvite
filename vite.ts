@@ -53,7 +53,7 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
       if (e.key === "Escape") dismissOverlay();
     });
 
-    const showOverlay = (message) => {
+    const showOverlay = (message, title = "BunVite Build Error") => {
       dismissOverlay();
       overlay = document.createElement("div");
       overlay.style.cssText = "position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.85);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box";
@@ -66,8 +66,15 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
 
       const header = document.createElement("div");
       header.style.cssText = "display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#27272a;border-bottom:1px solid #3f3f46";
-      header.innerHTML = '<div style="display:flex;align-items:center;gap:8px"><span style="display:inline-block;width:8px;height:8px;border-radius:9999px;background:#ef4444"></span><span style="font-family:ui-monospace,monospace;font-size:12px;font-weight:600;color:#f43f5e;text-transform:uppercase;letter-spacing:0.05em">BunVite Build Error</span></div><button type="button" style="background:none;border:none;color:#a1a1aa;cursor:pointer;font-size:18px;line-height:1;padding:4px" title="Close (Esc)">&times;</button>';
-      header.querySelector("button")?.addEventListener("click", dismissOverlay);
+      header.innerHTML = '<div style="display:flex;align-items:center;gap:8px"><span style="display:inline-block;width:8px;height:8px;border-radius:9999px;background:#ef4444"></span><span style="font-family:ui-monospace,monospace;font-size:12px;font-weight:600;color:#f43f5e;text-transform:uppercase;letter-spacing:0.05em">' + title + '</span></div><div style="display:flex;align-items:center;gap:8px"><button type="button" id="hmr-reload-btn" style="background:#3f3f46;border:none;color:#e4e4e7;border-radius:6px;font-size:12px;padding:4px 10px;cursor:pointer">Reload</button><button type="button" id="hmr-reset-btn" style="background:#4338ca;border:none;color:#fff;border-radius:6px;font-size:12px;padding:4px 10px;cursor:pointer">Reset & Reload</button><button type="button" id="hmr-close-btn" style="background:none;border:none;color:#a1a1aa;cursor:pointer;font-size:18px;line-height:1;padding:4px" title="Close (Esc)">&times;</button></div>';
+      
+      header.querySelector("#hmr-reload-btn")?.addEventListener("click", () => location.reload());
+      header.querySelector("#hmr-reset-btn")?.addEventListener("click", () => {
+        delete window.__hmr_state__;
+        try { localStorage.removeItem("bunvite_todos"); } catch (_) {}
+        location.reload();
+      });
+      header.querySelector("#hmr-close-btn")?.addEventListener("click", dismissOverlay);
 
       const body = document.createElement("div");
       body.style.cssText = "padding:20px;overflow-y:auto";
@@ -83,6 +90,16 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
       document.body.appendChild(overlay);
     };
 
+    window.addEventListener("error", (e) => {
+      const msg = e.error?.stack || e.error?.message || e.message;
+      if (msg) showOverlay(msg, "Runtime Error");
+    });
+
+    window.addEventListener("unhandledrejection", (e) => {
+      const msg = e.reason?.stack || e.reason?.message || String(e.reason);
+      if (msg) showOverlay(msg, "Unhandled Promise Rejection");
+    });
+
     const connect = () => {
       ws = new WebSocket(\`\${proto}//\${location.host}/ws-hmr\`);
       ws.onmessage = async (e) => {
@@ -90,7 +107,7 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
           const payload = JSON.parse(e.data);
 
           if (payload.type === "build-error") {
-            showOverlay(payload.message);
+            showOverlay(payload.message, "BunVite Build Error");
             return;
           }
 
@@ -104,6 +121,7 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
                 const newLink = link.cloneNode();
                 newLink.href = \`\${url.pathname}?t=\${payload.timestamp}\`;
                 newLink.onload = () => link.remove();
+                newLink.onerror = () => link.remove();
                 link.parentNode?.insertBefore(newLink, link.nextSibling);
               }
             }
@@ -122,6 +140,7 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
 
             try {
               await import(\`\${normPath}?t=\${payload.timestamp}\`);
+              dismissOverlay();
 
               if (inputState && inputState.value) {
                 const newInput = mountEl?.querySelector("#todo-input");
@@ -137,6 +156,7 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
               }
             } catch (err) {
               console.error("[HMR] Error applying module update:", err);
+              showOverlay(err?.stack || err?.message || String(err), "HMR Runtime Error");
             }
           }
 
@@ -413,7 +433,12 @@ export function createDevServer(
                 continue;
               }
 
-              if (file.endsWith('.css')) {
+              const isCss = file.endsWith('.css');
+              const isJsOrTs =
+                file.startsWith('src/') && (file.endsWith('.ts') || file.endsWith('.js'));
+              const isHtml = file.endsWith('.html');
+
+              if (isCss || isJsOrTs || isHtml) {
                 await compileTailwind(true);
                 socket.send(
                   JSON.stringify({
@@ -422,10 +447,9 @@ export function createDevServer(
                     timestamp,
                   }),
                 );
-              } else if (
-                file.startsWith('src/') &&
-                (file.endsWith('.ts') || file.endsWith('.js'))
-              ) {
+              }
+
+              if (isJsOrTs) {
                 socket.send(
                   JSON.stringify({
                     type: 'js-update',
@@ -433,7 +457,7 @@ export function createDevServer(
                     timestamp,
                   }),
                 );
-              } else if (file.endsWith('.html')) {
+              } else if (isHtml) {
                 socket.send(JSON.stringify({ type: 'full-reload' }));
               }
             } catch (_) {}
