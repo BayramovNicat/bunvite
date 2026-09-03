@@ -108,20 +108,20 @@ root.innerHTML = /*html*/ `
             <div class="badge-slot"></div>
           </div>
           <div class="flex items-center gap-2">
-            <input type="search" data-action="search" value="" placeholder="Search..." autocomplete="off" class="w-28 focus:w-44 transition-all duration-150 bg-zinc-800/50 border border-zinc-700/40 rounded-lg px-2.5 py-1 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-indigo-500/50" />
-            <button type="button" data-action="toggle-all" title="Toggle all" class="p-1.5 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/80 transition-colors cursor-pointer">${CheckCheck}</button>
+            <input type="search" data-action="search" value="" placeholder="Search..." autocomplete="off" aria-label="Search tasks" class="w-28 focus:w-44 transition-all duration-150 bg-zinc-800/50 border border-zinc-700/40 rounded-lg px-2.5 py-1 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-indigo-500/50" />
+            <button type="button" data-action="toggle-all" title="Toggle all" aria-label="Toggle all tasks" class="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/80 transition-colors cursor-pointer">${CheckCheck}</button>
           </div>
         </header>
         <div class="calendar-panel hidden px-6 pb-4 shrink-0"></div>
         <div class="px-6 pb-4 shrink-0">
           <form id="todo-form" class="space-y-2">
             <div class="flex items-center gap-2 bg-zinc-800/60 border border-zinc-700/50 rounded-xl px-4 py-2.5 focus-within:border-indigo-500/50 focus-within:bg-zinc-800 transition-all duration-150">
-              <input id="todo-input" name="task" placeholder="Add a task... (/ to focus)" autocomplete="off" class="flex-1 bg-transparent text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden" />
-              <button type="submit" class="text-zinc-500 hover:text-indigo-400 transition-colors cursor-pointer">${Plus}</button>
+              <input id="todo-input" name="task" placeholder="Add a task... (/ to focus)" autocomplete="off" aria-label="Add a task" class="flex-1 bg-transparent text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden" />
+              <button type="submit" aria-label="Add task" title="Add task" class="text-zinc-400 hover:text-indigo-400 transition-colors cursor-pointer">${Plus}</button>
             </div>
             <div class="flex items-center gap-2 text-xs">
-              <input type="date" name="dueDate" value="${state.selectedDate}" class="bg-zinc-800/40 border border-zinc-700/40 rounded-lg px-2 py-1 text-zinc-300 focus:outline-hidden focus:border-indigo-500/50 text-xs" />
-              <select name="category" class="bg-zinc-800/40 border border-zinc-700/40 rounded-lg px-2 py-1 text-zinc-300 focus:outline-hidden focus:border-indigo-500/50 text-xs cursor-pointer">
+              <input type="date" name="dueDate" value="${state.selectedDate}" aria-label="Due date" title="Due date" class="bg-zinc-800/40 border border-zinc-700/40 rounded-lg px-2 py-1 text-zinc-300 focus:outline-hidden focus:border-indigo-500/50 text-xs" />
+              <select name="category" aria-label="Task category" title="Task category" class="bg-zinc-800/40 border border-zinc-700/40 rounded-lg px-2 py-1 text-zinc-300 focus:outline-hidden focus:border-indigo-500/50 text-xs cursor-pointer">
                 ${CATEGORIES.map((c) => /*html*/ `<option value="${c}">${c}</option>`).join('')}
               </select>
             </div>
@@ -191,9 +191,9 @@ const syncDueDateInput = (date: string): void => {
 
 const TodoEditRow = (t: Todo): string => /*html*/ `
   <li class="todo-item flex items-center gap-2 px-5 py-2.5 bg-zinc-800/50" data-id="${t.id}">
-    <input type="text" data-edit-input="${t.id}" value="${escapeHtml(t.text)}" class="flex-1 bg-zinc-800 border border-indigo-500/80 rounded-lg px-2.5 py-1 text-sm text-zinc-100 focus:outline-hidden" />
-    <button type="button" data-action="save-edit" class="text-xs px-2.5 py-1 rounded bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 transition-colors cursor-pointer">Save</button>
-    <button type="button" data-action="cancel-edit" class="text-xs px-2 py-1 rounded text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer">Cancel</button>
+    <input type="text" data-edit-input="${t.id}" value="${escapeHtml(t.text)}" aria-label="Edit task description" class="flex-1 bg-zinc-800 border border-indigo-500/80 rounded-lg px-2.5 py-1 text-sm text-zinc-100 focus:outline-hidden" />
+    <button type="button" data-action="save-edit" aria-label="Save edit" class="text-xs px-2.5 py-1 rounded bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 transition-colors cursor-pointer">Save</button>
+    <button type="button" data-action="cancel-edit" aria-label="Cancel edit" class="text-xs px-2 py-1 rounded text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer">Cancel</button>
   </li>
 `;
 
@@ -204,7 +204,7 @@ const TodoItem = (t: Todo, todayStr: string): string => {
     : '';
 
   const dateDisplay = t.dueDate
-    ? /*html*/ `<span class="text-[11px] ${t.dueDate === todayStr ? 'text-indigo-400 font-medium' : 'text-zinc-500'}">${t.dueDate === todayStr ? 'Today' : t.dueDate}</span>`
+    ? /*html*/ `<span class="text-[11px] ${t.dueDate === todayStr ? 'text-indigo-400 font-medium' : 'text-zinc-400'}">${t.dueDate === todayStr ? 'Today' : t.dueDate}</span>`
     : '';
 
   const priorityBadgeStyle =
@@ -212,27 +212,27 @@ const TodoItem = (t: Todo, todayStr: string): string => {
       ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
       : priority === 'medium'
         ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-        : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800';
+        : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800';
 
   const priorityLabel = priority === 'high' ? 'High' : priority === 'medium' ? 'Med' : 'Low';
 
   return /*html*/ `
     <li class="todo-item group list-none flex items-center gap-3 px-5 py-3.5 hover:bg-white/2 transition-colors cursor-grab active:cursor-grabbing border-y-2 border-transparent" data-id="${t.id}" draggable="true">
-      <span class="drag-handle opacity-0 group-hover:opacity-40 hover:!opacity-100 text-zinc-500 shrink-0 select-none cursor-grab active:cursor-grabbing transition-opacity">${Grip}</span>
-      <button type="button" data-action="toggle" class="shrink-0 size-4.5 rounded-full border transition-all cursor-pointer flex items-center justify-center ${t.completed ? 'bg-indigo-500 border-indigo-500' : 'border-zinc-600 hover:border-zinc-400 bg-transparent'}">
+      <span class="drag-handle opacity-0 group-hover:opacity-40 hover:!opacity-100 text-zinc-400 shrink-0 select-none cursor-grab active:cursor-grabbing transition-opacity">${Grip}</span>
+      <button type="button" data-action="toggle" aria-label="${t.completed ? 'Mark task as incomplete' : 'Mark task as complete'}" title="${t.completed ? 'Mark incomplete' : 'Mark complete'}" class="shrink-0 size-4.5 rounded-full border transition-all cursor-pointer flex items-center justify-center ${t.completed ? 'bg-indigo-500 border-indigo-500' : 'border-zinc-600 hover:border-zinc-400 bg-transparent'}">
         ${t.completed ? Check : ''}
       </button>
-      <span class="todo-text flex-1 text-sm leading-relaxed select-none transition-colors cursor-pointer ${t.completed ? 'line-through text-zinc-600' : 'text-zinc-200'}" data-action="toggle">${escapeHtml(t.text)}</span>
+      <span class="todo-text flex-1 text-sm leading-relaxed select-none transition-colors cursor-pointer ${t.completed ? 'line-through text-zinc-500' : 'text-zinc-200'}" data-action="toggle">${escapeHtml(t.text)}</span>
       <div class="flex items-center gap-1.5 shrink-0">
         ${categoryBadge}
         ${dateDisplay}
-        <button type="button" data-action="priority" title="Priority: ${priority}" class="text-[10px] font-medium px-1.5 py-0.5 rounded transition-colors cursor-pointer ${priorityBadgeStyle}">
+        <button type="button" data-action="priority" title="Priority: ${priority}" aria-label="Priority: ${priority}" class="text-[10px] font-medium px-1.5 py-0.5 rounded transition-colors cursor-pointer ${priorityBadgeStyle}">
           ${priorityLabel}
         </button>
       </div>
       <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-        <button type="button" data-action="edit" title="Edit task" class="size-5 flex items-center justify-center rounded text-zinc-600 hover:text-zinc-300 hover:bg-white/5 transition-all cursor-pointer">${Pencil}</button>
-        <button type="button" data-action="delete" title="Delete task" class="delete-btn size-5 flex items-center justify-center rounded text-zinc-600 hover:text-zinc-300 hover:bg-white/5 transition-all cursor-pointer">${Close}</button>
+        <button type="button" data-action="edit" title="Edit task" aria-label="Edit task" class="size-5 flex items-center justify-center rounded text-zinc-400 hover:text-zinc-200 hover:bg-white/5 transition-all cursor-pointer">${Pencil}</button>
+        <button type="button" data-action="delete" title="Delete task" aria-label="Delete task" class="delete-btn size-5 flex items-center justify-center rounded text-zinc-400 hover:text-zinc-200 hover:bg-white/5 transition-all cursor-pointer">${Close}</button>
       </div>
     </li>
   `;
@@ -285,13 +285,13 @@ const renderCalendar = (): string => {
     <div class="bg-zinc-800/30 border border-zinc-700/40 rounded-xl p-3.5 space-y-3">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-1">
-          <button type="button" data-action="prev-month" class="size-7 flex items-center justify-center rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer">${ChevronLeft}</button>
+          <button type="button" data-action="prev-month" title="Previous month" aria-label="Previous month" class="size-7 flex items-center justify-center rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer">${ChevronLeft}</button>
           <span class="text-sm font-semibold text-zinc-200 tracking-tight">${MONTH_NAMES[month]} ${year}</span>
-          <button type="button" data-action="next-month" class="size-7 flex items-center justify-center rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer">${ChevronRight}</button>
+          <button type="button" data-action="next-month" title="Next month" aria-label="Next month" class="size-7 flex items-center justify-center rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer">${ChevronRight}</button>
         </div>
-        <button type="button" data-action="cal-today" class="text-xs px-2.5 py-1 rounded bg-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer">Today</button>
+        <button type="button" data-action="cal-today" aria-label="Go to today" class="text-xs px-2.5 py-1 rounded bg-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer">Today</button>
       </div>
-      <div class="grid grid-cols-7 text-center text-[11px] font-medium text-zinc-500">
+      <div class="grid grid-cols-7 text-center text-[11px] font-medium text-zinc-400">
         <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
       </div>
       <div class="grid grid-cols-7 gap-1">
@@ -308,10 +308,10 @@ const renderCalendar = (): string => {
                 ? 'bg-zinc-800 text-indigo-400 font-semibold ring-1 ring-indigo-500/40'
                 : c.isCurrentMonth
                   ? 'text-zinc-300 hover:bg-zinc-800/60'
-                  : 'text-zinc-600 opacity-40 hover:bg-zinc-800/30';
+                  : 'text-zinc-500 opacity-60 hover:bg-zinc-800/30';
 
             return /*html*/ `
-            <button type="button" data-action="select-date" data-date="${c.dateStr}" class="relative h-8 rounded-lg flex flex-col items-center justify-center text-xs transition-colors cursor-pointer ${baseStyle}">
+            <button type="button" data-action="select-date" data-date="${c.dateStr}" aria-label="${c.dateStr}" class="relative h-8 rounded-lg flex flex-col items-center justify-center text-xs transition-colors cursor-pointer ${baseStyle}">
               <span>${c.dayNum}</span>
               ${
                 dayTasks.length
@@ -344,7 +344,7 @@ const renderSidebar = () => {
   return /*html*/ `
     <div class="space-y-6">
       <div class="space-y-1">
-        <h2 class="text-xs font-semibold text-zinc-500 tracking-wider uppercase px-2 mb-2">Navigation</h2>
+        <h2 class="text-xs font-semibold text-zinc-400 tracking-wider uppercase px-2 mb-2">Navigation</h2>
         ${views
           .map((v) => {
             const isActive = state.currentView === v.id;
@@ -358,7 +358,7 @@ const renderSidebar = () => {
                 ${v.icon}
                 <span>${v.label}</span>
               </div>
-              ${v.count !== undefined ? /*html*/ `<span class="text-[11px] px-1.5 py-0.5 rounded-full ${isActive ? 'bg-indigo-500/20 text-indigo-300' : 'bg-zinc-800 text-zinc-500'}">${v.count}</span>` : ''}
+              ${v.count !== undefined ? /*html*/ `<span class="text-[11px] px-1.5 py-0.5 rounded-full ${isActive ? 'bg-indigo-500/20 text-indigo-300' : 'bg-zinc-800 text-zinc-400'}">${v.count}</span>` : ''}
             </button>
           `;
           })
@@ -367,10 +367,10 @@ const renderSidebar = () => {
 
       <div class="space-y-1">
         <div class="flex items-center justify-between px-2 mb-2">
-          <h2 class="text-xs font-semibold text-zinc-500 tracking-wider uppercase">Categories</h2>
+          <h2 class="text-xs font-semibold text-zinc-400 tracking-wider uppercase">Categories</h2>
           ${
             state.selectedCategory
-              ? /*html*/ `<button type="button" data-action="clear-category" class="text-[10px] text-zinc-500 hover:text-zinc-300 cursor-pointer">All</button>`
+              ? /*html*/ `<button type="button" data-action="clear-category" aria-label="Show all categories" class="text-[10px] text-zinc-400 hover:text-zinc-200 cursor-pointer">All</button>`
               : ''
           }
         </div>
@@ -395,7 +395,7 @@ const renderSidebar = () => {
                 <span class="size-2 rounded-full ${dotColor}"></span>
                 <span>${cat}</span>
               </div>
-              <span class="text-[11px] text-zinc-600">${catCount}</span>
+              <span class="text-[11px] text-zinc-400">${catCount}</span>
             </button>
           `;
         }).join('')}
@@ -410,7 +410,7 @@ const renderSidebar = () => {
       <div class="w-full bg-zinc-800 rounded-full h-1.5 overflow-hidden">
         <div class="bg-indigo-500 h-full transition-all duration-300 rounded-full" style="width: ${progressPercent}%"></div>
       </div>
-      <p class="text-[11px] text-zinc-600 text-center">${completedCount} of ${total} tasks finished</p>
+      <p class="text-[11px] text-zinc-400 text-center">${completedCount} of ${total} tasks finished</p>
     </div>
   `;
 };
@@ -461,20 +461,20 @@ const render = () => {
     ? visible
         .map((t) => (state.editingId === t.id ? TodoEditRow(t) : TodoItem(t, todayStr)))
         .join('')
-    : /*html*/ `<p class="text-zinc-600 text-xs text-center py-8">${emptyMessage}</p>`;
+    : /*html*/ `<li class="list-none text-zinc-400 text-xs text-center py-8">${emptyMessage}</li>`;
 
   footer.innerHTML = /*html*/ `
-    <span class="text-xs text-zinc-600">${active} remaining</span>
+    <span class="text-xs text-zinc-400">${active} remaining</span>
     <div class="flex items-center gap-0.5">
       ${(['all', 'active', 'completed'] as const)
         .map(
           (f) => /*html*/ `
-        <button type="button" data-filter="${f}" class="text-xs px-3 py-1 rounded-full transition-all cursor-pointer capitalize ${state.filter === f ? 'bg-indigo-500/20 text-indigo-400 font-medium' : 'text-zinc-500 hover:text-zinc-300'}">${f === 'completed' ? 'Done' : f}</button>
+        <button type="button" data-filter="${f}" class="text-xs px-3 py-1 rounded-full transition-all cursor-pointer capitalize ${state.filter === f ? 'bg-indigo-500/20 text-indigo-400 font-medium' : 'text-zinc-400 hover:text-zinc-200'}">${f === 'completed' ? 'Done' : f}</button>
       `,
         )
         .join('')}
     </div>
-    <button type="button" id="clear-btn" data-action="clear" class="text-xs text-zinc-600 hover:text-zinc-400 transition-colors cursor-pointer">Clear</button>
+    <button type="button" id="clear-btn" data-action="clear" aria-label="Clear completed tasks" class="text-xs text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer">Clear</button>
   `;
 
   toastSlot.innerHTML = state.lastDeleted
