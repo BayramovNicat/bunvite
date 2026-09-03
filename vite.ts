@@ -1,14 +1,14 @@
-import { watch } from "node:fs";
-import { cp, mkdir, rm } from "node:fs/promises";
-import { networkInterfaces } from "node:os";
-import { basename, join } from "node:path";
-import { file as bunFile, type Server, type ServerWebSocket, serve } from "bun";
+import { watch } from 'node:fs';
+import { cp, mkdir, rm } from 'node:fs/promises';
+import { networkInterfaces } from 'node:os';
+import { basename, join } from 'node:path';
+import { file as bunFile, type Server, type ServerWebSocket, serve } from 'bun';
 
 export const CONFIG = {
   root: import.meta.dir,
-  srcDir: join(import.meta.dir, "src"),
-  publicDir: join(import.meta.dir, "public"),
-  distDir: join(import.meta.dir, "dist"),
+  srcDir: join(import.meta.dir, 'src'),
+  publicDir: join(import.meta.dir, 'public'),
+  distDir: join(import.meta.dir, 'dist'),
   devPort: Number(process.env.PORT) || 5173,
   previewPort: Number(process.env.PORT) || 4173,
 } as const;
@@ -149,11 +149,11 @@ async function compileTailwind(force = false): Promise<string> {
   }
 
   const proc = Bun.spawn(
-    ["bun", "x", "@tailwindcss/cli", "-i", join(CONFIG.srcDir, "style.css"), "--cwd", CONFIG.root],
+    ['bun', 'x', '@tailwindcss/cli', '-i', join(CONFIG.srcDir, 'style.css'), '--cwd', CONFIG.root],
     {
       cwd: CONFIG.root,
-      stdout: "pipe",
-      stderr: "pipe",
+      stdout: 'pipe',
+      stderr: 'pipe',
     },
   );
 
@@ -182,13 +182,13 @@ export function formatBuildError(err: unknown): string {
         const pos = item.position;
         if (pos?.lineText !== undefined) {
           const col = Math.max(1, pos.column ?? 1);
-          const pointer = `${" ".repeat(col - 1)}^`;
-          const file = pos.file ?? "unknown";
-          return `${file}:${pos.line}:${pos.column}\n\n  ${pos.line} | ${pos.lineText}\n    | ${pointer}\n\n${item.message ?? "Build error"}`;
+          const pointer = `${' '.repeat(col - 1)}^`;
+          const file = pos.file ?? 'unknown';
+          return `${file}:${pos.line}:${pos.column}\n\n  ${pos.line} | ${pos.lineText}\n    | ${pointer}\n\n${item.message ?? 'Build error'}`;
         }
         return item.message ?? String(item);
       })
-      .join("\n\n---\n\n");
+      .join('\n\n---\n\n');
   }
   return err instanceof Error ? err.message : String(err);
 }
@@ -198,27 +198,27 @@ async function compileTypeScript(
   force = false,
 ): Promise<{ code: string } | { error: string }> {
   if (!force && cachedJs.has(filePath)) {
-    return { code: cachedJs.get(filePath)?.code ?? "" };
+    return { code: cachedJs.get(filePath)?.code ?? '' };
   }
 
   try {
     const build = await Bun.build({
       entrypoints: [filePath],
-      target: "browser",
-      sourcemap: "inline",
+      target: 'browser',
+      sourcemap: 'inline',
       minify: false,
     });
 
     if (!build.success || build.outputs.length === 0) {
-      const error = build.logs.map((l) => l.message ?? String(l)).join("\n");
-      console.error("❌ Build error:", error);
-      return { error: error || "Build failed" };
+      const error = build.logs.map((l) => l.message ?? String(l)).join('\n');
+      console.error('❌ Build error:', error);
+      return { error: error || 'Build failed' };
     }
 
     let code = await build.outputs[0].text();
     code = code.replace(
       /(?:const|let|var) state = (\{[^;]+\});/,
-      "var state = (window.__hmr_state__ ??= $1);",
+      'var state = (window.__hmr_state__ ??= $1);',
     );
     cachedJs.set(filePath, { code, timestamp: Date.now() });
     return { code };
@@ -231,7 +231,7 @@ async function compileTypeScript(
 
 function invalidateAssetCache(file?: string) {
   cachedCss = null;
-  if (!file || file.endsWith(".ts") || file.endsWith(".js")) {
+  if (!file || file.endsWith('.ts') || file.endsWith('.js')) {
     cachedJs.clear();
   }
 }
@@ -248,9 +248,9 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
       watch(CONFIG.root, { recursive: true }, (_evt, rawFile) => {
         if (
           !rawFile ||
-          rawFile.startsWith("node_modules") ||
-          rawFile.startsWith("dist") ||
-          rawFile.startsWith(".git")
+          rawFile.startsWith('node_modules') ||
+          rawFile.startsWith('dist') ||
+          rawFile.startsWith('.git')
         ) {
           return;
         }
@@ -260,12 +260,12 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
         if (debounceTimer) clearTimeout(debounceTimer);
         debounceTimer = setTimeout(async () => {
           const timestamp = Date.now();
-          const file = rawFile.replace(/^[./]+/, "");
+          const file = rawFile.replace(/^[./]+/, '');
 
-          if (file.endsWith(".html")) {
+          if (file.endsWith('.html')) {
             for (const socket of activeSockets) {
               try {
-                socket.send(JSON.stringify({ type: "full-reload" }));
+                socket.send(JSON.stringify({ type: 'full-reload' }));
               } catch (_) {}
             }
             return;
@@ -274,11 +274,11 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
           await compileTailwind(true);
 
           let compileError: string | null = null;
-          if (file.startsWith("src/") && (file.endsWith(".ts") || file.endsWith(".js"))) {
+          if (file.startsWith('src/') && (file.endsWith('.ts') || file.endsWith('.js'))) {
             const targetPath = join(CONFIG.root, file);
             if (await bunFile(targetPath).exists()) {
               const compileResult = await compileTypeScript(targetPath, true);
-              if ("error" in compileResult) {
+              if ('error' in compileResult) {
                 compileError = compileResult.error;
               }
             }
@@ -289,7 +289,7 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
               if (compileError) {
                 socket.send(
                   JSON.stringify({
-                    type: "build-error",
+                    type: 'build-error',
                     message: compileError,
                   }),
                 );
@@ -298,16 +298,16 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
 
               socket.send(
                 JSON.stringify({
-                  type: "css-update",
-                  path: "/src/style.css",
+                  type: 'css-update',
+                  path: '/src/style.css',
                   timestamp,
                 }),
               );
 
-              if (file.startsWith("src/") && (file.endsWith(".ts") || file.endsWith(".js"))) {
+              if (file.startsWith('src/') && (file.endsWith('.ts') || file.endsWith('.js'))) {
                 socket.send(
                   JSON.stringify({
-                    type: "js-update",
+                    type: 'js-update',
                     path: `/${file}`,
                     timestamp,
                   }),
@@ -335,45 +335,45 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
       const url = new URL(req.url);
       const pathname = url.pathname;
 
-      if (pathname === "/ws-hmr" || pathname === "/ws-reload") {
+      if (pathname === '/ws-hmr' || pathname === '/ws-reload') {
         if (server.upgrade(req, { data: undefined })) return undefined;
-        return new Response("Upgrade failed", { status: 400 });
+        return new Response('Upgrade failed', { status: 400 });
       }
 
-      if (pathname === "/" || pathname === "/index.html") {
-        const indexFile = bunFile(join(CONFIG.root, "index.html"));
+      if (pathname === '/' || pathname === '/index.html') {
+        const indexFile = bunFile(join(CONFIG.root, 'index.html'));
         let html = await indexFile.text();
 
         if (enableLiveReload) {
-          html = html.replace("</body>", `${HMR_CLIENT_SCRIPT}</body>`);
+          html = html.replace('</body>', `${HMR_CLIENT_SCRIPT}</body>`);
         }
 
         return new Response(html, {
           headers: {
-            "Content-Type": "text/html; charset=utf-8",
-            "Cache-Control": "no-cache, no-store, must-revalidate",
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
           },
         });
       }
 
-      if (pathname === "/src/style.css" || pathname.endsWith(".css")) {
+      if (pathname === '/src/style.css' || pathname.endsWith('.css')) {
         const css = await compileTailwind();
         return new Response(css, {
           headers: {
-            "Content-Type": "text/css; charset=utf-8",
-            "Cache-Control": "no-cache, no-store, must-revalidate",
+            'Content-Type': 'text/css; charset=utf-8',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
           },
         });
       }
 
-      if (pathname.endsWith(".ts") || pathname.endsWith(".js")) {
-        const filePath = join(CONFIG.root, pathname.replace(/^\//, ""));
+      if (pathname.endsWith('.ts') || pathname.endsWith('.js')) {
+        const filePath = join(CONFIG.root, pathname.replace(/^\//, ''));
         const result = await compileTypeScript(filePath);
 
-        if ("error" in result) {
+        if ('error' in result) {
           for (const socket of activeSockets) {
             try {
-              socket.send(JSON.stringify({ type: "build-error", message: result.error }));
+              socket.send(JSON.stringify({ type: 'build-error', message: result.error }));
             } catch (_) {}
           }
           return new Response(result.error, { status: 500 });
@@ -381,45 +381,45 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
 
         return new Response(result.code, {
           headers: {
-            "Content-Type": "application/javascript; charset=utf-8",
-            "Cache-Control": "no-cache, no-store, must-revalidate",
+            'Content-Type': 'application/javascript; charset=utf-8',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
           },
         });
       }
 
-      const publicFile = bunFile(join(CONFIG.publicDir, pathname.replace(/^\//, "")));
+      const publicFile = bunFile(join(CONFIG.publicDir, pathname.replace(/^\//, '')));
       if (await publicFile.exists()) {
         return new Response(publicFile);
       }
 
-      const staticFile = bunFile(join(CONFIG.root, pathname.replace(/^\//, "")));
+      const staticFile = bunFile(join(CONFIG.root, pathname.replace(/^\//, '')));
       if (await staticFile.exists()) {
         return new Response(staticFile);
       }
 
-      if (req.headers.get("accept")?.includes("text/html")) {
-        const indexFile = bunFile(join(CONFIG.root, "index.html"));
+      if (req.headers.get('accept')?.includes('text/html')) {
+        const indexFile = bunFile(join(CONFIG.root, 'index.html'));
         let html = await indexFile.text();
         if (enableLiveReload) {
-          html = html.replace("</body>", `${HMR_CLIENT_SCRIPT}</body>`);
+          html = html.replace('</body>', `${HMR_CLIENT_SCRIPT}</body>`);
         }
         return new Response(html, {
           headers: {
-            "Content-Type": "text/html; charset=utf-8",
-            "Cache-Control": "no-cache, no-store, must-revalidate",
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
           },
         });
       }
 
-      return new Response("Not Found", { status: 404 });
+      return new Response('Not Found', { status: 404 });
     },
   });
 }
 
 export async function buildProduction() {
-  console.log("🚀 Starting production build...\n");
+  console.log('🚀 Starting production build...\n');
   const start = performance.now();
-  const assetsDir = join(CONFIG.distDir, "assets");
+  const assetsDir = join(CONFIG.distDir, 'assets');
 
   await rm(CONFIG.distDir, { recursive: true, force: true });
   await mkdir(assetsDir, { recursive: true });
@@ -427,15 +427,15 @@ export async function buildProduction() {
   await cp(CONFIG.publicDir, CONFIG.distDir, { recursive: true }).catch(() => {});
 
   const jsBuild = await Bun.build({
-    entrypoints: [join(CONFIG.srcDir, "app.ts")],
+    entrypoints: [join(CONFIG.srcDir, 'app.ts')],
     outdir: assetsDir,
-    naming: "app.[hash].js",
-    target: "browser",
+    naming: 'app.[hash].js',
+    target: 'browser',
     minify: true,
   });
 
   if (!jsBuild.success || jsBuild.outputs.length === 0) {
-    console.error("❌ JS Build failed:", jsBuild.logs);
+    console.error('❌ JS Build failed:', jsBuild.logs);
     process.exit(1);
   }
 
@@ -445,26 +445,26 @@ export async function buildProduction() {
 
   const twProc = Bun.spawn(
     [
-      "bun",
-      "x",
-      "@tailwindcss/cli",
-      "-i",
-      join(CONFIG.srcDir, "style.css"),
-      "-o",
+      'bun',
+      'x',
+      '@tailwindcss/cli',
+      '-i',
+      join(CONFIG.srcDir, 'style.css'),
+      '-o',
       cssPath,
-      "--minify",
-      "--cwd",
+      '--minify',
+      '--cwd',
       CONFIG.root,
     ],
-    { stdout: "inherit", stderr: "inherit", cwd: CONFIG.root },
+    { stdout: 'inherit', stderr: 'inherit', cwd: CONFIG.root },
   );
   await twProc.exited;
 
-  let html = await bunFile(join(CONFIG.root, "index.html")).text();
-  html = html.replace("/src/style.css", `/assets/${cssFile}`);
-  html = html.replace("/src/app.ts", `/assets/${jsFile}`);
+  let html = await bunFile(join(CONFIG.root, 'index.html')).text();
+  html = html.replace('/src/style.css', `/assets/${cssFile}`);
+  html = html.replace('/src/app.ts', `/assets/${jsFile}`);
 
-  await Bun.write(join(CONFIG.distDir, "index.html"), html);
+  await Bun.write(join(CONFIG.distDir, 'index.html'), html);
 
   const elapsed = (performance.now() - start).toFixed(1);
   console.log(`\n✨ Production build completed in ${elapsed}ms!`);
@@ -477,17 +477,17 @@ export function previewProduction(port = CONFIG.previewPort): Server<unknown> {
     async fetch(req) {
       const url = new URL(req.url);
       let path = url.pathname;
-      if (path === "/" || path === "") path = "/index.html";
+      if (path === '/' || path === '') path = '/index.html';
 
       const file = bunFile(join(CONFIG.distDir, path));
       if (await file.exists()) {
         const headers: Record<string, string> = {};
-        if (path.startsWith("/assets/")) {
-          headers["Cache-Control"] = "public, max-age=31536000, immutable";
+        if (path.startsWith('/assets/')) {
+          headers['Cache-Control'] = 'public, max-age=31536000, immutable';
         }
         return new Response(file, { headers });
       }
-      return new Response("Not Found", { status: 404 });
+      return new Response('Not Found', { status: 404 });
     },
   });
 
@@ -495,18 +495,18 @@ export function previewProduction(port = CONFIG.previewPort): Server<unknown> {
   return server;
 }
 
-const cmd = process.argv[2] || "dev";
+const cmd = process.argv[2] || 'dev';
 
 export function getNetworkUrl(port: number): string | null {
   for (const addrs of Object.values(networkInterfaces())) {
-    const match = addrs?.find((a) => a.family === "IPv4" && !a.internal);
+    const match = addrs?.find((a) => a.family === 'IPv4' && !a.internal);
     if (match) return `http://${match.address}:${port}/`;
   }
   return null;
 }
 
 if (import.meta.main) {
-  if (cmd === "dev") {
+  if (cmd === 'dev') {
     const server = createDevServer(CONFIG.devPort, true);
     const port = server.port ?? CONFIG.devPort;
     const networkUrl = getNetworkUrl(port);
@@ -514,9 +514,9 @@ if (import.meta.main) {
     console.log(`     Local:   http://localhost:${port}/`);
     if (networkUrl) console.log(`     Network: ${networkUrl}`);
     console.log();
-  } else if (cmd === "build") {
+  } else if (cmd === 'build') {
     buildProduction();
-  } else if (cmd === "preview") {
+  } else if (cmd === 'preview') {
     previewProduction(CONFIG.previewPort);
   } else {
     console.log(`Unknown command: "${cmd}". Usage: bun vite.ts [dev|build|preview]`);
