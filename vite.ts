@@ -188,7 +188,7 @@ export function createDevServer(port = CONFIG.devPort, enableLiveReload = true):
                 }),
               );
 
-              if (file.endsWith(".ts") || file.endsWith(".js")) {
+              if (file.startsWith("src/") && (file.endsWith(".ts") || file.endsWith(".js"))) {
                 socket.send(
                   JSON.stringify({
                     type: "js-update",
