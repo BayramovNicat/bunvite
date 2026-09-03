@@ -6,6 +6,7 @@ import {
   CONFIG,
   createDevServer,
   formatBuildError,
+  getBuildSummary,
   getClientEnv,
   getNetworkUrl,
   previewProduction,
@@ -227,6 +228,15 @@ describe('production build & preview', () => {
     } finally {
       previewServer.stop(true);
     }
+  });
+
+  test('calculates gzip and uncompressed sizes in build summary', async () => {
+    const summary = await getBuildSummary(CONFIG.distDir);
+    expect(summary.length).toBeGreaterThan(0);
+    const indexEntry = summary.find((e) => e.path === 'index.html');
+    expect(indexEntry).toBeDefined();
+    expect(indexEntry?.size).toBeGreaterThan(0);
+    expect(indexEntry?.gzip).toBeGreaterThan(0);
   });
 });
 

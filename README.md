@@ -68,10 +68,10 @@ bun install
 
 | Script | Command | Description |
 | :--- | :--- | :--- |
-| `bun run dev` | `bun --watch run vite.ts dev` | Starts dev server at `http://localhost:5173/` with HMR and auto-restart |
-| `bun run build` | `bun run vite.ts build` | Builds production-ready minified & hashed bundle in `dist/` |
-| `bun run preview` | `bun run vite.ts preview` | Serves `dist/` locally with immutable asset caching |
-| `bun run test` | `bun test --parallel` | Runs all 39 automated unit, integration, and E2E tests |
+| `bun run dev` | `bun --watch run vite.ts dev` | Starts dev server at `http://localhost:5173/` with HMR (use `--open` or `-o` to launch browser) |
+| `bun run build` | `bun run vite.ts build` | Builds minified, hashed bundle in `dist/` and prints uncompressed + gzip size summary |
+| `bun run preview` | `bun run vite.ts preview` | Serves `dist/` locally with immutable asset caching (`--open` supported) |
+| `bun run test` | `bun test --parallel` | Runs all 40 automated unit, integration, and E2E tests |
 | `bun run check` | `bun run --parallel "check:*"` | Runs typecheck (`tsc`), linter (`biome`), and tests in parallel |
 | `bun run format` | `biome format --write .` | Formats all code according to project style guidelines |
 

@@ -1,5 +1,5 @@
 import { watch } from 'node:fs';
-import { cp, mkdir, rm } from 'node:fs/promises';
+import { cp, mkdir, readdir, rm } from 'node:fs/promises';
 import { networkInterfaces } from 'node:os';
 import { basename, join } from 'node:path';
 import { file as bunFile, type Server, type ServerWebSocket, serve } from 'bun';
@@ -21,6 +21,7 @@ export const CONFIG = {
   distDir: join(import.meta.dir, 'dist'),
   devPort: Number(process.env.PORT) || 5173,
   previewPort: Number(process.env.PORT) || 4173,
+  base: (process.env.VITE_BASE || '/').replace(/\/?$/, '/'),
   proxy: (process.env.VITE_PROXY_TARGET
     ? { '/api': process.env.VITE_PROXY_TARGET }
     : {}) as ProxyConfig,
@@ -212,14 +213,14 @@ export function getClientEnv(mode: 'development' | 'production'): Record<string,
     DEV: isDev,
     PROD: !isDev,
     MODE: mode,
-    BASE_URL: '/',
+    BASE_URL: CONFIG.base,
   };
 
   const clientEnv: Record<string, string> = {
     'import.meta.env.DEV': String(isDev),
     'import.meta.env.PROD': String(!isDev),
     'import.meta.env.MODE': JSON.stringify(mode),
-    'import.meta.env.BASE_URL': JSON.stringify('/'),
+    'import.meta.env.BASE_URL': JSON.stringify(CONFIG.base),
   };
 
   for (const [key, value] of Object.entries(process.env)) {
@@ -580,14 +581,58 @@ export async function buildProduction() {
 
   let html = await bunFile(join(CONFIG.root, 'index.html')).text();
   html = replaceEnvInHtml(html);
-  html = html.replace('/src/style.css', `/assets/${cssFile}`);
-  html = html.replace('/src/app.ts', `/assets/${jsFile}`);
+  const basePrefix = CONFIG.base === '/' ? '/' : CONFIG.base;
+  html = html.replace('/src/style.css', `${basePrefix}assets/${cssFile}`);
+  html = html.replace('/src/app.ts', `${basePrefix}assets/${jsFile}`);
 
   await Bun.write(join(CONFIG.distDir, 'index.html'), html);
 
+  const summary = await getBuildSummary(CONFIG.distDir);
+  console.log('  dist/ output summary:');
+  for (const item of summary) {
+    const sizeKb = (item.size / 1024).toFixed(2);
+    const gzipKb = (item.gzip / 1024).toFixed(2);
+    console.log(
+      `  dist/${item.path.padEnd(28)} ${sizeKb.padStart(6)} kB │ gzip: ${gzipKb.padStart(5)} kB`,
+    );
+  }
+
   const elapsed = (performance.now() - start).toFixed(1);
-  console.log(`\n✨ Production build completed in ${elapsed}ms!`);
-  console.log(`📂 Output: dist/\n`);
+  console.log(`\n✨ Production build completed in ${elapsed}ms!\n`);
+}
+
+export async function getBuildSummary(
+  distDir = CONFIG.distDir,
+): Promise<Array<{ path: string; size: number; gzip: number }>> {
+  const entries = await readdir(distDir, { recursive: true });
+  const results: Array<{ path: string; size: number; gzip: number }> = [];
+
+  for (const entry of entries) {
+    const filePath = join(distDir, entry);
+    const f = bunFile(filePath);
+    if (await f.exists()) {
+      const stat = await f.stat();
+      if (stat.isFile()) {
+        const bytes = new Uint8Array(await f.arrayBuffer());
+        const gzip = Bun.gzipSync(bytes).byteLength;
+        results.push({
+          path: entry.replaceAll('\\', '/'),
+          size: bytes.byteLength,
+          gzip,
+        });
+      }
+    }
+  }
+
+  return results.sort((a, b) => b.size - a.size);
+}
+
+export function openBrowser(url: string) {
+  const osCmd =
+    process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer' : 'xdg-open';
+  try {
+    Bun.spawn([osCmd, url]).unref();
+  } catch (_) {}
 }
 
 export function previewProduction(port = CONFIG.previewPort): Server<unknown> {
@@ -596,6 +641,9 @@ export function previewProduction(port = CONFIG.previewPort): Server<unknown> {
     async fetch(req) {
       const url = new URL(req.url);
       let path = url.pathname;
+      if (CONFIG.base !== '/' && path.startsWith(CONFIG.base)) {
+        path = path.slice(CONFIG.base.length - 1);
+      }
       if (path === '/' || path === '') path = '/index.html';
 
       const file = bunFile(join(CONFIG.distDir, path));
@@ -625,6 +673,8 @@ export function getNetworkUrl(port: number): string | null {
 }
 
 if (import.meta.main) {
+  const isOpen = process.argv.includes('--open') || process.argv.includes('-o');
+
   if (cmd === 'dev') {
     const server = createDevServer(CONFIG.devPort, true);
     const port = server.port ?? CONFIG.devPort;
@@ -636,11 +686,18 @@ if (import.meta.main) {
     console.log(`     Local:   http://localhost:${port}/`);
     if (networkUrl) console.log(`     Network: ${networkUrl}`);
     console.log();
+
+    if (isOpen) {
+      openBrowser(`http://localhost:${port}/`);
+    }
   } else if (cmd === 'build') {
-    buildProduction();
+    await buildProduction();
   } else if (cmd === 'preview') {
-    previewProduction(CONFIG.previewPort);
+    const server = previewProduction(CONFIG.previewPort);
+    if (isOpen) {
+      openBrowser(`http://localhost:${server.port ?? CONFIG.previewPort}/`);
+    }
   } else {
-    console.log(`Unknown command: "${cmd}". Usage: bun vite.ts [dev|build|preview]`);
+    console.log(`Unknown command: "${cmd}". Usage: bun vite.ts [dev|build|preview] [--open]`);
   }
 }
