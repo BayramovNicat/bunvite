@@ -179,6 +179,11 @@ const cachedJs = new Map<string, { code: string; timestamp: number }>();
 const TAILWIND_CACHE_DIR = join(CONFIG.root, '.cache', 'tailwind');
 
 export async function ensureTailwindBinary(): Promise<string> {
+  const globalBin = Bun.which('tailwindcss');
+  if (globalBin) {
+    return globalBin;
+  }
+
   const binaryName = process.platform === 'win32' ? 'tailwindcss.exe' : 'tailwindcss';
   const localBin = join(CONFIG.root, '.bin', binaryName);
   if (existsSync(localBin)) {
@@ -209,6 +214,10 @@ export async function ensureTailwindBinary(): Promise<string> {
 }
 
 export function getTailwindCommand(args: string[]): string[] {
+  const globalBin = Bun.which('tailwindcss');
+  if (globalBin) {
+    return [globalBin, ...args];
+  }
   const binaryName = process.platform === 'win32' ? 'tailwindcss.exe' : 'tailwindcss';
   const localBin = join(CONFIG.root, '.bin', binaryName);
   if (existsSync(localBin)) {

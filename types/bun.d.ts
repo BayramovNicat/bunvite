@@ -86,6 +86,7 @@ declare namespace Bun {
   export function serve<T = unknown>(
     options: import('bun').ServeOptions<T>,
   ): import('bun').Server<T>;
+  export function which(name: string): string | null;
   export function build(options: unknown): Promise<{
     success: boolean;
     outputs: Array<{ path: string; text(): Promise<string> }>;
