@@ -577,15 +577,39 @@ export function createDevServer(
   });
 }
 
-export async function buildProduction() {
-  console.log('🚀 Starting production build...\n');
+export interface BuildStageTimings {
+  setup: number;
+  js: number;
+  css: number;
+  html: number;
+  summary: number;
+}
+
+export interface BuildProductionResult {
+  elapsed: number;
+  stages: BuildStageTimings;
+  summary: Array<{ path: string; size: number; gzip: number }>;
+}
+
+export interface BuildOptions {
+  silent?: boolean;
+}
+
+export async function buildProduction(
+  options: BuildOptions = {},
+): Promise<BuildProductionResult> {
+  const silent = options.silent ?? false;
+  if (!silent) {
+    console.log('🚀 Starting production build...\n');
+  }
   const start = performance.now();
   const assetsDir = join(CONFIG.distDir, 'assets');
 
+  const t0 = performance.now();
   await rm(CONFIG.distDir, { recursive: true, force: true });
   await mkdir(assetsDir, { recursive: true });
-
   await cp(CONFIG.publicDir, CONFIG.distDir, { recursive: true }).catch(() => {});
+  const t1 = performance.now();
 
   const jsBuild = await Bun.build({
     entrypoints: [join(CONFIG.srcDir, 'app.ts')],
@@ -604,6 +628,7 @@ export async function buildProduction() {
   const jsFile = basename(jsBuild.outputs[0].path);
   const cssFile = `style.${Date.now().toString(36)}.css`;
   const cssPath = join(assetsDir, cssFile);
+  const t2 = performance.now();
 
   const twProc = Bun.spawn(
     [
@@ -618,11 +643,16 @@ export async function buildProduction() {
       '--cwd',
       CONFIG.root,
     ],
-    { stdout: 'inherit', stderr: 'inherit', cwd: CONFIG.root },
+    {
+      stdout: silent ? 'ignore' : 'inherit',
+      stderr: silent ? 'ignore' : 'inherit',
+      cwd: CONFIG.root,
+    },
   );
   await twProc.exited;
 
   const cssContent = await bunFile(cssPath).text();
+  const t3 = performance.now();
 
   let html = await bunFile(join(CONFIG.root, 'index.html')).text();
   html = replaceEnvInHtml(html);
@@ -638,19 +668,38 @@ export async function buildProduction() {
   );
 
   await Bun.write(join(CONFIG.distDir, 'index.html'), html);
+  const t4 = performance.now();
 
   const summary = await getBuildSummary(CONFIG.distDir);
-  console.log('  dist/ output summary:');
-  for (const item of summary) {
-    const sizeKb = (item.size / 1024).toFixed(2);
-    const gzipKb = (item.gzip / 1024).toFixed(2);
-    console.log(
-      `  dist/${item.path.padEnd(28)} ${sizeKb.padStart(6)} kB │ gzip: ${gzipKb.padStart(5)} kB`,
-    );
+  const t5 = performance.now();
+
+  if (!silent) {
+    console.log('  dist/ output summary:');
+    for (const item of summary) {
+      const sizeKb = (item.size / 1024).toFixed(2);
+      const gzipKb = (item.gzip / 1024).toFixed(2);
+      console.log(
+        `  dist/${item.path.padEnd(28)} ${sizeKb.padStart(6)} kB │ gzip: ${gzipKb.padStart(5)} kB`,
+      );
+    }
   }
 
-  const elapsed = (performance.now() - start).toFixed(1);
-  console.log(`\n✨ Production build completed in ${elapsed}ms!\n`);
+  const elapsed = t5 - start;
+  if (!silent) {
+    console.log(`\n✨ Production build completed in ${elapsed.toFixed(1)}ms!\n`);
+  }
+
+  return {
+    elapsed,
+    stages: {
+      setup: t1 - t0,
+      js: t2 - t1,
+      css: t3 - t2,
+      html: t4 - t3,
+      summary: t5 - t4,
+    },
+    summary,
+  };
 }
 
 export async function getBuildSummary(

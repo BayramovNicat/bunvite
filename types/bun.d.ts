@@ -49,7 +49,9 @@ declare module 'bun:test' {
     toEqual(expected: unknown): void;
     toBeDefined(): void;
     toBeGreaterThan(expected: number): void;
+    toBeGreaterThanOrEqual(expected: number): void;
     toBeLessThan(expected: number): void;
+    toBeLessThanOrEqual(expected: number): void;
     toBeNull(): void;
     not: {
       toBeNull(): void;
