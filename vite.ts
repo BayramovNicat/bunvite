@@ -182,11 +182,30 @@ let twCompilerCache: {
   cssText: string;
   compiler: Awaited<ReturnType<typeof compileTw>>;
   scanner: TwScanner;
+  lastCandidateHash: bigint;
+  cachedMinifiedCss: string;
+  cachedRawCss: string;
 } | null = null;
+
+const TAILWIND_CACHE_DIR = join(CONFIG.root, '.cache', 'tailwind');
+
+async function getTailwindCacheKey(cssText: string): Promise<string> {
+  const html = await bunFile(join(CONFIG.root, 'index.html')).text().catch(() => '');
+  const appTs = await bunFile(join(CONFIG.srcDir, 'app.ts')).text().catch(() => '');
+  return Bun.hash(`${cssText}:${html}:${appTs}`).toString(36);
+}
 
 export async function compileTailwindInProcess(options: { minify?: boolean } = {}): Promise<string> {
   const inputPath = join(CONFIG.srcDir, 'style.css');
   const cssText = await bunFile(inputPath).text();
+
+  const cacheKey = await getTailwindCacheKey(cssText);
+  const cachePath = join(TAILWIND_CACHE_DIR, `${cacheKey}.${options.minify ? 'min' : 'raw'}.css`);
+  const diskCache = bunFile(cachePath);
+
+  if (await diskCache.exists()) {
+    return await diskCache.text();
+  }
 
   if (!twCompilerCache || twCompilerCache.cssText !== cssText) {
     const compiler = await compileTw(cssText, {
@@ -202,15 +221,40 @@ export async function compileTailwindInProcess(options: { minify?: boolean } = {
           : [{ ...compiler.root, negated: false }]
     ).concat(compiler.sources);
     const scanner = new TwScanner({ sources });
-    twCompilerCache = { cssText, compiler, scanner };
+    twCompilerCache = {
+      cssText,
+      compiler,
+      scanner,
+      lastCandidateHash: 0n,
+      cachedMinifiedCss: '',
+      cachedRawCss: '',
+    };
   }
 
   const candidates = twCompilerCache.scanner.scan();
-  const rawCss = twCompilerCache.compiler.build(candidates);
-  if (options.minify) {
-    return optimizeTw(rawCss, { minify: true }).code;
+  const candidateHash = Bun.hash(candidates.join(' '));
+
+  if (candidateHash === twCompilerCache.lastCandidateHash) {
+    if (options.minify && twCompilerCache.cachedMinifiedCss) {
+      return twCompilerCache.cachedMinifiedCss;
+    }
+    if (!options.minify && twCompilerCache.cachedRawCss) {
+      return twCompilerCache.cachedRawCss;
+    }
   }
-  return rawCss;
+
+  const rawCss = twCompilerCache.compiler.build(candidates);
+  const minifiedCss = options.minify ? optimizeTw(rawCss, { minify: true }).code : '';
+
+  twCompilerCache.lastCandidateHash = candidateHash;
+  twCompilerCache.cachedRawCss = rawCss;
+  if (options.minify) {
+    twCompilerCache.cachedMinifiedCss = minifiedCss;
+  }
+
+  const resultCss = options.minify ? minifiedCss : rawCss;
+  await Bun.write(cachePath, resultCss).catch(() => {});
+  return resultCss;
 }
 
 export function getTailwindCommand(args: string[]): string[] {
@@ -777,26 +821,29 @@ export async function getBuildSummary(
   distDir = CONFIG.distDir,
 ): Promise<Array<{ path: string; size: number; gzip: number }>> {
   const entries = await readdir(distDir, { recursive: true });
-  const results: Array<{ path: string; size: number; gzip: number }> = [];
-
-  for (const entry of entries) {
-    const filePath = join(distDir, entry);
-    const f = bunFile(filePath);
-    if (await f.exists()) {
-      const stat = await f.stat();
-      if (stat.isFile()) {
-        const bytes = new Uint8Array(await f.arrayBuffer());
-        const gzip = Bun.gzipSync(bytes).byteLength;
-        results.push({
-          path: entry.replaceAll('\\', '/'),
-          size: bytes.byteLength,
-          gzip,
-        });
+  const results = await Promise.all(
+    entries.map(async (entry) => {
+      const filePath = join(distDir, entry);
+      const f = bunFile(filePath);
+      if (await f.exists()) {
+        const stat = await f.stat();
+        if (stat.isFile()) {
+          const bytes = new Uint8Array(await f.arrayBuffer());
+          const gzip = Bun.gzipSync(bytes).byteLength;
+          return {
+            path: entry.replaceAll('\\', '/'),
+            size: bytes.byteLength,
+            gzip,
+          };
+        }
       }
-    }
-  }
+      return null;
+    }),
+  );
 
-  return results.sort((a, b) => b.size - a.size);
+  return results
+    .filter((item): item is { path: string; size: number; gzip: number } => item !== null)
+    .sort((a, b) => b.size - a.size);
 }
 
 export function openBrowser(url: string) {
