@@ -21,9 +21,5 @@
     "type": "git",
     "url": "https://github.com/BayramovNicat/bunvite.git"
   },
-  "homepage": "https://github.com/BayramovNicat/bunvite#readme",
-  "devDependencies": {
-    "@tailwindcss/cli": "^4.3.3",
-    "tailwindcss": "^4.3.3"
-  }
+  "homepage": "https://github.com/BayramovNicat/bunvite#readme"
 }

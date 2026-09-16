@@ -96,6 +96,7 @@ declare namespace Bun {
 declare var process: {
   env: Record<string, string | undefined>;
   platform: string;
+  arch: string;
   argv: string[];
   exit(code?: number): never;
 };

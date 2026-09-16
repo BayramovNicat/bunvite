@@ -2,8 +2,6 @@ import { existsSync, watch } from 'node:fs';
 import { cp, mkdir, readdir, rm } from 'node:fs/promises';
 import { networkInterfaces } from 'node:os';
 import { basename, join } from 'node:path';
-import { compile as compileTw, optimize as optimizeTw } from '@tailwindcss/node';
-import { Scanner as TwScanner } from '@tailwindcss/oxide';
 import { file as bunFile, type Server, type ServerWebSocket, serve } from 'bun';
 
 export type ProxyTarget =
@@ -178,16 +176,50 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
 
 let cachedCss: { code: string; timestamp: number } | null = null;
 const cachedJs = new Map<string, { code: string; timestamp: number }>();
-let twCompilerCache: {
-  cssText: string;
-  compiler: Awaited<ReturnType<typeof compileTw>>;
-  scanner: TwScanner;
-  lastCandidateHash: bigint;
-  cachedMinifiedCss: string;
-  cachedRawCss: string;
-} | null = null;
-
 const TAILWIND_CACHE_DIR = join(CONFIG.root, '.cache', 'tailwind');
+
+export async function ensureTailwindBinary(): Promise<string> {
+  const binaryName = process.platform === 'win32' ? 'tailwindcss.exe' : 'tailwindcss';
+  const localBin = join(CONFIG.root, '.bin', binaryName);
+  if (existsSync(localBin)) {
+    return localBin;
+  }
+
+  const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
+  let target = '';
+  if (process.platform === 'darwin') target = `tailwindcss-macos-${arch}`;
+  else if (process.platform === 'linux') target = `tailwindcss-linux-${arch}`;
+  else if (process.platform === 'win32') target = `tailwindcss-windows-${arch}.exe`;
+
+  if (target) {
+    try {
+      const url = `https://github.com/tailwindlabs/tailwindcss/releases/latest/download/${target}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        await mkdir(join(CONFIG.root, '.bin'), { recursive: true });
+        await Bun.write(localBin, await res.arrayBuffer());
+        if (process.platform !== 'win32') {
+          await Bun.spawn(['chmod', '+x', localBin]).exited;
+        }
+        return localBin;
+      }
+    } catch {}
+  }
+  return '';
+}
+
+export function getTailwindCommand(args: string[]): string[] {
+  const binaryName = process.platform === 'win32' ? 'tailwindcss.exe' : 'tailwindcss';
+  const localBin = join(CONFIG.root, '.bin', binaryName);
+  if (existsSync(localBin)) {
+    return [localBin, ...args];
+  }
+  const localCli = join(CONFIG.root, 'node_modules', '@tailwindcss', 'cli', 'dist', 'index.mjs');
+  if (existsSync(localCli)) {
+    return ['bun', localCli, ...args];
+  }
+  return ['bun', 'x', '@tailwindcss/cli', ...args];
+}
 
 async function getTailwindCacheKey(cssText: string): Promise<string> {
   const html = await bunFile(join(CONFIG.root, 'index.html')).text().catch(() => '');
@@ -195,7 +227,9 @@ async function getTailwindCacheKey(cssText: string): Promise<string> {
   return Bun.hash(`${cssText}:${html}:${appTs}`).toString(36);
 }
 
-export async function compileTailwindInProcess(options: { minify?: boolean } = {}): Promise<string> {
+export async function compileTailwindCss(
+  options: { minify?: boolean; outputPath?: string; silent?: boolean } = {},
+): Promise<string> {
   const inputPath = join(CONFIG.srcDir, 'style.css');
   const cssText = await bunFile(inputPath).text();
 
@@ -204,65 +238,46 @@ export async function compileTailwindInProcess(options: { minify?: boolean } = {
   const diskCache = bunFile(cachePath);
 
   if (await diskCache.exists()) {
-    return await diskCache.text();
+    const cached = await diskCache.text();
+    if (options.outputPath) {
+      await Bun.write(options.outputPath, cached);
+    }
+    return cached;
   }
 
-  if (!twCompilerCache || twCompilerCache.cssText !== cssText) {
-    const compiler = await compileTw(cssText, {
-      base: CONFIG.srcDir,
-      from: inputPath,
-      onDependency: () => {},
+  await ensureTailwindBinary();
+  const twCmd = getTailwindCommand([
+    '-i',
+    inputPath,
+    ...(options.outputPath ? ['-o', options.outputPath] : []),
+    ...(options.minify ? ['--minify'] : []),
+    '--cwd',
+    CONFIG.root,
+  ]);
+  if (options.silent) {
+    twCmd.push('--silent');
+  }
+
+  let code = '';
+  if (options.outputPath) {
+    const proc = Bun.spawn(twCmd, {
+      cwd: CONFIG.root,
+      stdout: options.silent ? 'ignore' : 'inherit',
+      stderr: options.silent ? 'ignore' : 'inherit',
     });
-    const sources = (
-      compiler.root === 'none'
-        ? []
-        : compiler.root === null
-          ? [{ base: CONFIG.root, pattern: '**/*', negated: false }]
-          : [{ ...compiler.root, negated: false }]
-    ).concat(compiler.sources);
-    const scanner = new TwScanner({ sources });
-    twCompilerCache = {
-      cssText,
-      compiler,
-      scanner,
-      lastCandidateHash: 0n,
-      cachedMinifiedCss: '',
-      cachedRawCss: '',
-    };
+    await proc.exited;
+    code = await bunFile(options.outputPath).text();
+  } else {
+    const proc = Bun.spawn(twCmd, {
+      cwd: CONFIG.root,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    code = await new Response(proc.stdout).text();
   }
 
-  const candidates = twCompilerCache.scanner.scan();
-  const candidateHash = Bun.hash(candidates.join(' '));
-
-  if (candidateHash === twCompilerCache.lastCandidateHash) {
-    if (options.minify && twCompilerCache.cachedMinifiedCss) {
-      return twCompilerCache.cachedMinifiedCss;
-    }
-    if (!options.minify && twCompilerCache.cachedRawCss) {
-      return twCompilerCache.cachedRawCss;
-    }
-  }
-
-  const rawCss = twCompilerCache.compiler.build(candidates);
-  const minifiedCss = options.minify ? optimizeTw(rawCss, { minify: true }).code : '';
-
-  twCompilerCache.lastCandidateHash = candidateHash;
-  twCompilerCache.cachedRawCss = rawCss;
-  if (options.minify) {
-    twCompilerCache.cachedMinifiedCss = minifiedCss;
-  }
-
-  const resultCss = options.minify ? minifiedCss : rawCss;
-  await Bun.write(cachePath, resultCss).catch(() => {});
-  return resultCss;
-}
-
-export function getTailwindCommand(args: string[]): string[] {
-  const localCli = join(CONFIG.root, 'node_modules', '@tailwindcss', 'cli', 'dist', 'index.mjs');
-  if (existsSync(localCli)) {
-    return ['bun', localCli, ...args];
-  }
-  return ['bun', 'x', '@tailwindcss/cli', ...args];
+  await Bun.write(cachePath, code).catch(() => {});
+  return code;
 }
 
 async function compileTailwind(force = false): Promise<string> {
@@ -270,28 +285,9 @@ async function compileTailwind(force = false): Promise<string> {
     return cachedCss.code;
   }
 
-  try {
-    const code = await compileTailwindInProcess({ minify: false });
-    cachedCss = { code, timestamp: Date.now() };
-    return code;
-  } catch {
-    const twCmd = getTailwindCommand([
-      '-i',
-      join(CONFIG.srcDir, 'style.css'),
-      '--cwd',
-      CONFIG.root,
-    ]);
-
-    const proc = Bun.spawn(twCmd, {
-      cwd: CONFIG.root,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
-
-    const code = await new Response(proc.stdout).text();
-    cachedCss = { code, timestamp: Date.now() };
-    return code;
-  }
+  const code = await compileTailwindCss({ minify: false, silent: true });
+  cachedCss = { code, timestamp: Date.now() };
+  return code;
 }
 
 interface BuildErrorLike {
@@ -712,19 +708,6 @@ export async function buildProduction(
   const cssFile = `style.${Date.now().toString(36)}.css`;
   const cssPath = join(assetsDir, cssFile);
 
-  const twCmd = getTailwindCommand([
-    '-i',
-    join(CONFIG.srcDir, 'style.css'),
-    '-o',
-    cssPath,
-    '--minify',
-    '--cwd',
-    CONFIG.root,
-  ]);
-  if (silent) {
-    twCmd.push('--silent');
-  }
-
   let tJsEnd = 0;
   const tJsStart = performance.now();
   const jsPromise = Bun.build({
@@ -744,18 +727,11 @@ export async function buildProduction(
   let cssContent = '';
 
   const cssPromise = (async () => {
-    try {
-      cssContent = await compileTailwindInProcess({ minify: true });
-      await Bun.write(cssPath, cssContent);
-    } catch {
-      const twProc = Bun.spawn(twCmd, {
-        stdout: silent ? 'ignore' : 'inherit',
-        stderr: silent ? 'ignore' : 'inherit',
-        cwd: CONFIG.root,
-      });
-      await twProc.exited;
-      cssContent = await bunFile(cssPath).text();
-    }
+    cssContent = await compileTailwindCss({
+      minify: true,
+      outputPath: cssPath,
+      silent,
+    });
     tCssEnd = performance.now();
   })();
 
