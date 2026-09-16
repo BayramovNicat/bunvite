@@ -1,7 +1,9 @@
-import { watch } from 'node:fs';
+import { existsSync, watch } from 'node:fs';
 import { cp, mkdir, readdir, rm } from 'node:fs/promises';
 import { networkInterfaces } from 'node:os';
 import { basename, join } from 'node:path';
+import { compile as compileTw, optimize as optimizeTw } from '@tailwindcss/node';
+import { Scanner as TwScanner } from '@tailwindcss/oxide';
 import { file as bunFile, type Server, type ServerWebSocket, serve } from 'bun';
 
 export type ProxyTarget =
@@ -176,24 +178,76 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
 
 let cachedCss: { code: string; timestamp: number } | null = null;
 const cachedJs = new Map<string, { code: string; timestamp: number }>();
+let twCompilerCache: {
+  cssText: string;
+  compiler: Awaited<ReturnType<typeof compileTw>>;
+  scanner: TwScanner;
+} | null = null;
+
+export async function compileTailwindInProcess(options: { minify?: boolean } = {}): Promise<string> {
+  const inputPath = join(CONFIG.srcDir, 'style.css');
+  const cssText = await bunFile(inputPath).text();
+
+  if (!twCompilerCache || twCompilerCache.cssText !== cssText) {
+    const compiler = await compileTw(cssText, {
+      base: CONFIG.srcDir,
+      from: inputPath,
+      onDependency: () => {},
+    });
+    const sources = (
+      compiler.root === 'none'
+        ? []
+        : compiler.root === null
+          ? [{ base: CONFIG.root, pattern: '**/*', negated: false }]
+          : [{ ...compiler.root, negated: false }]
+    ).concat(compiler.sources);
+    const scanner = new TwScanner({ sources });
+    twCompilerCache = { cssText, compiler, scanner };
+  }
+
+  const candidates = twCompilerCache.scanner.scan();
+  const rawCss = twCompilerCache.compiler.build(candidates);
+  if (options.minify) {
+    return optimizeTw(rawCss, { minify: true }).code;
+  }
+  return rawCss;
+}
+
+export function getTailwindCommand(args: string[]): string[] {
+  const localCli = join(CONFIG.root, 'node_modules', '@tailwindcss', 'cli', 'dist', 'index.mjs');
+  if (existsSync(localCli)) {
+    return ['bun', localCli, ...args];
+  }
+  return ['bun', 'x', '@tailwindcss/cli', ...args];
+}
 
 async function compileTailwind(force = false): Promise<string> {
   if (!force && cachedCss) {
     return cachedCss.code;
   }
 
-  const proc = Bun.spawn(
-    ['bun', 'x', '@tailwindcss/cli', '-i', join(CONFIG.srcDir, 'style.css'), '--cwd', CONFIG.root],
-    {
+  try {
+    const code = await compileTailwindInProcess({ minify: false });
+    cachedCss = { code, timestamp: Date.now() };
+    return code;
+  } catch {
+    const twCmd = getTailwindCommand([
+      '-i',
+      join(CONFIG.srcDir, 'style.css'),
+      '--cwd',
+      CONFIG.root,
+    ]);
+
+    const proc = Bun.spawn(twCmd, {
       cwd: CONFIG.root,
       stdout: 'pipe',
       stderr: 'pipe',
-    },
-  );
+    });
 
-  const code = await new Response(proc.stdout).text();
-  cachedCss = { code, timestamp: Date.now() };
-  return code;
+    const code = await new Response(proc.stdout).text();
+    cachedCss = { code, timestamp: Date.now() };
+    return code;
+  }
 }
 
 interface BuildErrorLike {
@@ -611,14 +665,57 @@ export async function buildProduction(
   await cp(CONFIG.publicDir, CONFIG.distDir, { recursive: true }).catch(() => {});
   const t1 = performance.now();
 
-  const jsBuild = await Bun.build({
+  const cssFile = `style.${Date.now().toString(36)}.css`;
+  const cssPath = join(assetsDir, cssFile);
+
+  const twCmd = getTailwindCommand([
+    '-i',
+    join(CONFIG.srcDir, 'style.css'),
+    '-o',
+    cssPath,
+    '--minify',
+    '--cwd',
+    CONFIG.root,
+  ]);
+  if (silent) {
+    twCmd.push('--silent');
+  }
+
+  let tJsEnd = 0;
+  const tJsStart = performance.now();
+  const jsPromise = Bun.build({
     entrypoints: [join(CONFIG.srcDir, 'app.ts')],
     outdir: assetsDir,
     naming: 'app.[hash].js',
     target: 'browser',
     minify: true,
     define: getClientEnv('production'),
+  }).then((res) => {
+    tJsEnd = performance.now();
+    return res;
   });
+
+  let tCssEnd = 0;
+  const tCssStart = performance.now();
+  let cssContent = '';
+
+  const cssPromise = (async () => {
+    try {
+      cssContent = await compileTailwindInProcess({ minify: true });
+      await Bun.write(cssPath, cssContent);
+    } catch {
+      const twProc = Bun.spawn(twCmd, {
+        stdout: silent ? 'ignore' : 'inherit',
+        stderr: silent ? 'ignore' : 'inherit',
+        cwd: CONFIG.root,
+      });
+      await twProc.exited;
+      cssContent = await bunFile(cssPath).text();
+    }
+    tCssEnd = performance.now();
+  })();
+
+  const [jsBuild] = await Promise.all([jsPromise, cssPromise]);
 
   if (!jsBuild.success || jsBuild.outputs.length === 0) {
     console.error('❌ JS Build failed:', jsBuild.logs);
@@ -626,32 +723,6 @@ export async function buildProduction(
   }
 
   const jsFile = basename(jsBuild.outputs[0].path);
-  const cssFile = `style.${Date.now().toString(36)}.css`;
-  const cssPath = join(assetsDir, cssFile);
-  const t2 = performance.now();
-
-  const twProc = Bun.spawn(
-    [
-      'bun',
-      'x',
-      '@tailwindcss/cli',
-      '-i',
-      join(CONFIG.srcDir, 'style.css'),
-      '-o',
-      cssPath,
-      '--minify',
-      '--cwd',
-      CONFIG.root,
-    ],
-    {
-      stdout: silent ? 'ignore' : 'inherit',
-      stderr: silent ? 'ignore' : 'inherit',
-      cwd: CONFIG.root,
-    },
-  );
-  await twProc.exited;
-
-  const cssContent = await bunFile(cssPath).text();
   const t3 = performance.now();
 
   let html = await bunFile(join(CONFIG.root, 'index.html')).text();
@@ -693,8 +764,8 @@ export async function buildProduction(
     elapsed,
     stages: {
       setup: t1 - t0,
-      js: t2 - t1,
-      css: t3 - t2,
+      js: tJsEnd - tJsStart,
+      css: tCssEnd - tCssStart,
       html: t4 - t3,
       summary: t5 - t4,
     },

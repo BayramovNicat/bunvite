@@ -101,6 +101,7 @@ declare var process: {
 };
 
 declare module 'node:fs' {
+  export function existsSync(path: string): boolean;
   export function watch(
     path: string,
     options: unknown,
