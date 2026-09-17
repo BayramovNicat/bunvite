@@ -38,9 +38,9 @@ Use the scripts defined in [`package.json`](file:///Users/nicat/Documents/antigr
 | `bun run preview` | Preview server | Serves `dist/` with gzip compression, `Cache-Control: immutable`, and SPA route fallback. Supports `--open` / `-o`. |
 | `bun run test` | Run tests | Executes unit, integration, and WebKit DOM tests via `bun test --parallel`. |
 | `bun run lint` | Lint check | Runs `bunx biome check .`. |
-| `bun run format` | Code formatting | Runs `bunx biome format --write .`. |
-| `bun run check:types` | Typecheck | Runs `bunx tsc --noEmit`. |
-| `bun run check` | Full test suite | Concurrently runs typecheck, linting, and all tests in parallel. |
+| `bun run format` | Format & safe-fixes | Runs `bunx biome check --write .`. |
+| `bun run typecheck` | Typecheck | Runs `bunx tsc --noEmit`. |
+| `bun run check` | Full verification suite | Runs typecheck, linting, and tests sequentially (`bun run typecheck && bun run lint && bun run test`). |
 
 ---
 

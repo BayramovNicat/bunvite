@@ -31,7 +31,7 @@ Replaces standard npm Vite with a single self-contained script (`vite.ts`) utili
 │   ├── app.ts             # Application entrypoint
 │   └── style.css          # Tailwind CSS v4 stylesheet
 ├── test/
-│   ├── todo.test.ts       # WebKit DOM E2E tests
+│   ├── app.test.ts        # WebKit DOM E2E tests
 │   └── vite.test.ts       # Engine, proxy, and integration tests
 ├── types/
 │   ├── bun.d.ts           # Ambient Bun and test runner typings
@@ -44,7 +44,6 @@ Replaces standard npm Vite with a single self-contained script (`vite.ts`) utili
 ├── index.html             # HTML entrypoint
 ├── package.json           # Scripts and minimal dev dependencies
 ├── tsconfig.json          # TypeScript compiler configuration
-├── bench.ts               # Production build benchmark script
 └── vite.ts                # Dev server, bundler, and preview engine
 ```
 
@@ -84,13 +83,12 @@ bun run dev
 | :--- | :--- |
 | `bun run dev` | Starts dev server at `http://localhost:5173/` (`--open` or `-o` to launch browser) |
 | `bun run build` | Compiles hashed, minified production assets into `dist/` with gzip summary |
-| `bun run bench` | Benchmarks production build pipeline across iterations with stage breakdown |
 | `bun run preview` | Serves `dist/` locally with gzip compression and immutable caching |
-| `bun run test` | Runs the test suite via `bun test --parallel` |
+| `bun run test` | Runs WebKit DOM app tests |
 | `bun run lint` | Checks code formatting and lints via Biome |
-| `bun run format` | Formats all files according to Biome rules |
-| `bun run check:types` | Runs typecheck without emitting files (`bunx tsc --noEmit`) |
-| `bun run check` | Runs type checking, linting, and tests in parallel |
+| `bun run format` | Formats and auto-fixes code according to Biome rules |
+| `bun run typecheck` | Runs typecheck without emitting files (`bunx tsc --noEmit`) |
+| `bun run check` | Runs type checking, linting, and tests sequentially |
 
 ---
 

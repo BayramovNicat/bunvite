@@ -9,17 +9,12 @@
   "scripts": {
     "dev": "bun --watch run vite.ts dev",
     "build": "bun run vite.ts build",
-    "bench": "bun run bench.ts",
     "preview": "bun run vite.ts preview",
-    "test": "bun test test/todo.test.ts",
-    "test:engine": "bun test test/engine/vite.test.ts test/engine/bench.test.ts",
-    "test:all": "bun test test/todo.test.ts test/engine/vite.test.ts test/engine/bench.test.ts",
+    "test": "bun test test/app.test.ts",
+    "typecheck": "bunx tsc --noEmit",
     "lint": "bunx biome check .",
-    "format": "bunx biome format --write .",
-    "check:types": "bunx tsc --noEmit",
-    "check:lint": "bunx biome check .",
-    "check:test": "bun test test/todo.test.ts",
-    "check": "bun run --parallel \"check:*\""
+    "format": "bunx biome check --write .",
+    "check": "bun run typecheck && bun run lint && bun run test"
   },
   "type": "module"
 }
