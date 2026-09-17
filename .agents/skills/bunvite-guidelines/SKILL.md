@@ -48,9 +48,7 @@ Use the scripts defined in [`package.json`](file:///Users/nicat/Documents/antigr
 
 All ambient declarations live in the root [`types/`](file:///Users/nicat/Documents/antigravity/agitated-galileo/types) folder. Keep `src/` free of `.d.ts` files.
 
-- [`types/bun.d.ts`](file:///Users/nicat/Documents/antigravity/agitated-galileo/types/bun.d.ts): Minimal ambient interfaces for `Bun.serve`, `Bun.build`, `Bun.spawn`, `Bun.WebView`, and `bun:test`.
-- [`types/env.d.ts`](file:///Users/nicat/Documents/antigravity/agitated-galileo/types/env.d.ts): Type definitions for `import.meta.env`.
-- [`types/styles.d.ts`](file:///Users/nicat/Documents/antigravity/agitated-galileo/types/styles.d.ts): Ambient module declarations for `*.scss`, `*.sass`, and `*.css` imports.
+- [`types/vite.d.ts`](file:///Users/nicat/Documents/antigravity/agitated-galileo/types/vite.d.ts): Consolidated ambient declarations for Bun engine runtime (`Bun.serve`, `Bun.build`, `Bun.spawn`, `Bun.WebView`, `bun:test`, node shims), `import.meta.env`, and CSS/SCSS asset modules. Automatically and seamlessly merges with `@types/bun` if installed in `node_modules`.
 
 ---
 

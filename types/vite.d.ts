@@ -1,8 +1,16 @@
 declare type Timer = ReturnType<typeof setTimeout>;
 
+declare interface ImportMetaEnv {
+  readonly VITE_APP_NAME: string;
+  readonly VITE_DEV_PORT: string;
+  readonly VITE_PROXY_TARGET: string;
+  readonly VITE_USE_HTTPS: string;
+}
+
 declare interface ImportMeta {
   dir: string;
   main: boolean;
+  readonly env: ImportMetaEnv;
 }
 
 declare module 'bun' {
@@ -138,3 +146,12 @@ declare module 'node:os' {
     Array<{ family: string; internal: boolean; address: string }> | undefined
   >;
 }
+
+declare module '*.module.css' {
+  const classes: Record<string, string>;
+  export default classes;
+}
+
+declare module '*.css';
+declare module '*.scss';
+declare module '*.sass';

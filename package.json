@@ -1,7 +1,11 @@
 {
   "name": "bunvite",
   "version": "1.0.0",
-  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BayramovNicat/bunvite.git"
+  },
+  "homepage": "https://github.com/BayramovNicat/bunvite#readme",
   "scripts": {
     "dev": "bun --watch run vite.ts dev",
     "build": "bun run vite.ts build",
@@ -17,9 +21,5 @@
     "check:test": "bun test test/todo.test.ts",
     "check": "bun run --parallel \"check:*\""
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/BayramovNicat/bunvite.git"
-  },
-  "homepage": "https://github.com/BayramovNicat/bunvite#readme"
+  "type": "module"
 }
