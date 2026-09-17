@@ -19,6 +19,17 @@ export const CONFIG = {
 };
 
 const TAILWIND_CACHE_DIR = join(CONFIG.root, '.cache', 'tailwind');
+const MAX_CACHEABLE_ASSET_SIZE = 2 * 1024 * 1024; // 2 MB
+
+const IGNORED_WATCH_PREFIXES = [
+  'node_modules',
+  'dist',
+  '.git',
+  '.cache',
+  '.vscode',
+  '.DS_Store',
+  '.idea',
+];
 
 const COMPRESSIBLE_EXTENSIONS = new Set([
   '.html',
@@ -532,7 +543,9 @@ async function serveStaticFile(req: Request, absPath: string): Promise<Response 
   const bytes = new Uint8Array(await file.arrayBuffer());
   const etag = `"${Bun.hash(bytes).toString(16)}"`;
   const type = file.type || 'application/octet-stream';
-  staticAssetCache.set(absPath, { bytes, etag, type });
+  if (bytes.byteLength <= MAX_CACHEABLE_ASSET_SIZE) {
+    staticAssetCache.set(absPath, { bytes, etag, type });
+  }
   return devResponse(req, bytes, type);
 }
 
@@ -639,9 +652,10 @@ export function createDevServer(
       watch(CONFIG.root, { recursive: true }, (_evt, rawFile) => {
         if (
           !rawFile ||
-          rawFile.startsWith('node_modules') ||
-          rawFile.startsWith('dist') ||
-          rawFile.startsWith('.git')
+          IGNORED_WATCH_PREFIXES.some((p) => rawFile.startsWith(p)) ||
+          rawFile.endsWith('~') ||
+          rawFile.endsWith('.swp') ||
+          rawFile.endsWith('.tmp')
         ) {
           return;
         }
@@ -665,53 +679,58 @@ export function createDevServer(
             }
           }
 
+          const messages: string[] = [];
+
+          if (compileError) {
+            messages.push(
+              JSON.stringify({
+                type: 'build-error',
+                message: compileError,
+              }),
+            );
+          } else {
+            const isCss = file.endsWith('.css');
+            const isJsOrTs =
+              file.startsWith('src/') &&
+              (file.endsWith('.ts') ||
+                file.endsWith('.js') ||
+                file.endsWith('.tsx') ||
+                file.endsWith('.jsx'));
+            const isHtml = file.endsWith('.html');
+
+            const styleEntry = await getStyleEntrypoint();
+            const styleFile = bunFile(styleEntry.path);
+            const usesTailwind =
+              (await styleFile.exists()) && hasTailwindImport(await styleFile.text());
+
+            if (isCss || (usesTailwind && (isJsOrTs || isHtml))) {
+              await compileTailwind(true, isCss ? join(CONFIG.root, file) : styleEntry.path);
+              messages.push(
+                JSON.stringify({
+                  type: 'css-update',
+                  path: isCss ? `/${file}` : styleEntry.rel,
+                  timestamp,
+                }),
+              );
+            }
+
+            if (isJsOrTs) {
+              messages.push(
+                JSON.stringify({
+                  type: 'js-update',
+                  path: `/${file}`,
+                  timestamp,
+                }),
+              );
+            } else if (isHtml) {
+              messages.push(JSON.stringify({ type: 'full-reload' }));
+            }
+          }
+
           for (const socket of activeSockets) {
             try {
-              if (compileError) {
-                socket.send(
-                  JSON.stringify({
-                    type: 'build-error',
-                    message: compileError,
-                  }),
-                );
-                continue;
-              }
-
-              const isCss = file.endsWith('.css');
-              const isJsOrTs =
-                file.startsWith('src/') &&
-                (file.endsWith('.ts') ||
-                  file.endsWith('.js') ||
-                  file.endsWith('.tsx') ||
-                  file.endsWith('.jsx'));
-              const isHtml = file.endsWith('.html');
-
-              const styleEntry = await getStyleEntrypoint();
-              const styleFile = bunFile(styleEntry.path);
-              const usesTailwind =
-                (await styleFile.exists()) && hasTailwindImport(await styleFile.text());
-
-              if (isCss || (usesTailwind && (isJsOrTs || isHtml))) {
-                await compileTailwind(true, isCss ? join(CONFIG.root, file) : styleEntry.path);
-                socket.send(
-                  JSON.stringify({
-                    type: 'css-update',
-                    path: isCss ? `/${file}` : styleEntry.rel,
-                    timestamp,
-                  }),
-                );
-              }
-
-              if (isJsOrTs) {
-                socket.send(
-                  JSON.stringify({
-                    type: 'js-update',
-                    path: `/${file}`,
-                    timestamp,
-                  }),
-                );
-              } else if (isHtml) {
-                socket.send(JSON.stringify({ type: 'full-reload' }));
+              for (const msg of messages) {
+                socket.send(msg);
               }
             } catch (_) {}
           }
@@ -787,7 +806,11 @@ export function createDevServer(
         return new Response('Upgrade failed', { status: 400 });
       }
 
-      if (pathname === '/' || pathname === '/index.html') {
+      const isHtmlNav =
+        req.headers.get('accept')?.includes('text/html') &&
+        !pathname.slice(pathname.lastIndexOf('/')).includes('.');
+
+      if (pathname === '/' || pathname === '/index.html' || isHtmlNav) {
         const html = await renderDevHtml(enableLiveReload);
         return devResponse(req, html, 'text/html; charset=utf-8');
       }
@@ -858,19 +881,20 @@ export async function buildProduction(
   const assetsDir = join(CONFIG.distDir, 'assets');
 
   const t0 = performance.now();
-  await rm(CONFIG.distDir, { recursive: true, force: true });
-  await mkdir(assetsDir, { recursive: true });
-
   const rawHtmlPromise = bunFile(join(CONFIG.root, 'index.html')).text();
-  const publicCopyPromise = cp(CONFIG.publicDir, CONFIG.distDir, { recursive: true }).catch(
-    () => {},
-  );
+  const setupPromise = (async () => {
+    await rm(CONFIG.distDir, { recursive: true, force: true });
+    await mkdir(assetsDir, { recursive: true });
+    await cp(CONFIG.publicDir, CONFIG.distDir, { recursive: true }).catch(() => {});
+  })();
 
-  const [rawHtml] = await Promise.all([rawHtmlPromise, publicCopyPromise]);
+  const [rawHtml] = await Promise.all([rawHtmlPromise, setupPromise]);
   const t1 = performance.now();
 
-  const jsEntry = await getAppEntrypoint(rawHtml);
-  const styleEntry = await getStyleEntrypoint(rawHtml);
+  const [jsEntry, styleEntry] = await Promise.all([
+    getAppEntrypoint(rawHtml),
+    getStyleEntrypoint(rawHtml),
+  ]);
   const cssBasename = styleEntry.file.replace(/\.css$/, '');
   const cssFile = `${cssBasename}.${Date.now().toString(36)}.css`;
   const cssPath = join(assetsDir, cssFile);
@@ -985,9 +1009,9 @@ export async function getBuildSummary(
   const entries = await readdir(distDir, { recursive: true });
   const results = await Promise.all(
     entries.map(async (entry) => {
-      const filePath = join(distDir, entry);
-      const f = bunFile(filePath);
-      if (await f.exists()) {
+      try {
+        const filePath = join(distDir, entry);
+        const f = bunFile(filePath);
         const stat = await f.stat();
         if (stat.isFile()) {
           const bytes = new Uint8Array(await f.arrayBuffer());
@@ -998,7 +1022,7 @@ export async function getBuildSummary(
             gzip,
           };
         }
-      }
+      } catch (_) {}
       return null;
     }),
   );
