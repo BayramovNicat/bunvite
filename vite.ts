@@ -5,8 +5,34 @@ import { basename, join } from 'node:path';
 import { file as bunFile, type Server, type ServerWebSocket, serve } from 'bun';
 
 // ============================================================================
-// 1. Types & Configuration
+// 1. Configuration & Types
 // ============================================================================
+
+export const CONFIG = {
+  root: import.meta.dir,
+  srcDir: join(import.meta.dir, 'src'),
+  publicDir: join(import.meta.dir, 'public'),
+  distDir: join(import.meta.dir, 'dist'),
+  devPort: Number(process.env.PORT) || 5173,
+  previewPort: Number(process.env.PORT) || 4173,
+  base: (process.env.VITE_BASE || '/').replace(/\/?$/, '/'),
+  proxy: (process.env.VITE_PROXY_TARGET
+    ? { '/api': process.env.VITE_PROXY_TARGET }
+    : {}) as ProxyConfig,
+};
+
+const TAILWIND_CACHE_DIR = join(CONFIG.root, '.cache', 'tailwind');
+
+const COMPRESSIBLE_EXTENSIONS = new Set([
+  '.html',
+  '.js',
+  '.css',
+  '.json',
+  '.svg',
+  '.txt',
+  '.xml',
+  '.map',
+]);
 
 export type ProxyTarget =
   | string
@@ -59,32 +85,6 @@ interface StaticCacheEntry {
   etag: string;
   type: string;
 }
-
-export const CONFIG = {
-  root: import.meta.dir,
-  srcDir: join(import.meta.dir, 'src'),
-  publicDir: join(import.meta.dir, 'public'),
-  distDir: join(import.meta.dir, 'dist'),
-  devPort: Number(process.env.PORT) || 5173,
-  previewPort: Number(process.env.PORT) || 4173,
-  base: (process.env.VITE_BASE || '/').replace(/\/?$/, '/'),
-  proxy: (process.env.VITE_PROXY_TARGET
-    ? { '/api': process.env.VITE_PROXY_TARGET }
-    : {}) as ProxyConfig,
-};
-
-const TAILWIND_CACHE_DIR = join(CONFIG.root, '.cache', 'tailwind');
-
-const COMPRESSIBLE_EXTENSIONS = new Set([
-  '.html',
-  '.js',
-  '.css',
-  '.json',
-  '.svg',
-  '.txt',
-  '.xml',
-  '.map',
-]);
 
 // In-memory compiler & asset caches
 let cachedCss: { code: string; path?: string; timestamp: number } | null = null;
