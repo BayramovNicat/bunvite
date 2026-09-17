@@ -109,10 +109,10 @@ describe('dev server', () => {
     const entry = await getAppEntrypoint();
     expect(entry.file === 'app.ts' || entry.file === 'app.js').toBe(true);
 
-    const tempJsPath = join(CONFIG.srcDir, 'temp-test.js');
+    const tempJsPath = join(CONFIG.root, 'test', 'temp-test.js');
     await Bun.write(tempJsPath, 'const state = { count: 0 };\nexport const getCount = () => state.count;');
     try {
-      const res = await fetch(`${devBase}/src/temp-test.js`);
+      const res = await fetch(`${devBase}/test/temp-test.js`);
       expect(res.status).toBe(200);
       const js = await res.text();
       expect(js).toContain('window.__hmr_state__ ??=');
@@ -769,10 +769,10 @@ describe('scss and sass support', () => {
   });
 
   test('dev server compiles and serves .scss file with text/css Content-Type', async () => {
-    const tempScssPath = join(CONFIG.srcDir, 'temp-server-test.scss');
+    const tempScssPath = join(CONFIG.root, 'test', 'temp-server-test.scss');
     await Bun.write(tempScssPath, '$primary: #10b981;\n.badge { color: $primary; }');
     try {
-      const res = await fetch(`${devBase}/src/temp-server-test.scss`);
+      const res = await fetch(`${devBase}/test/temp-server-test.scss`);
       expect(res.status).toBe(200);
       expect(res.headers.get('content-type')).toContain('text/css');
       const css = await res.text();
@@ -783,10 +783,10 @@ describe('scss and sass support', () => {
   });
 
   test('dev server resolves .css request to .scss file if .css is missing', async () => {
-    const tempScssPath = join(CONFIG.srcDir, 'temp-fallback-test.scss');
+    const tempScssPath = join(CONFIG.root, 'test', 'temp-fallback-test.scss');
     await Bun.write(tempScssPath, '$accent: #ec4899;\n.accent-box { border-color: $accent; }');
     try {
-      const res = await fetch(`${devBase}/src/temp-fallback-test.css`);
+      const res = await fetch(`${devBase}/test/temp-fallback-test.css`);
       expect(res.status).toBe(200);
       expect(res.headers.get('content-type')).toContain('text/css');
       const css = await res.text();
@@ -797,10 +797,10 @@ describe('scss and sass support', () => {
   });
 
   test('dev server returns 500 on SCSS compilation error', async () => {
-    const tempScssPath = join(CONFIG.srcDir, 'temp-invalid-syntax.scss');
+    const tempScssPath = join(CONFIG.root, 'test', 'temp-invalid-syntax.scss');
     await Bun.write(tempScssPath, '.invalid { color: $undefined_variable; }');
     try {
-      const res = await fetch(`${devBase}/src/temp-invalid-syntax.scss`);
+      const res = await fetch(`${devBase}/test/temp-invalid-syntax.scss`);
       expect(res.status).toBe(500);
       const text = await res.text();
       expect(text.toLowerCase()).toContain('error');
@@ -838,13 +838,13 @@ describe('scss and sass support', () => {
   });
 
   test('compiles TypeScript importing .scss module with DOM injection', async () => {
-    const tempScssPath = join(CONFIG.srcDir, 'temp-comp.scss');
-    const tempTsPath = join(CONFIG.srcDir, 'temp-comp.ts');
+    const tempScssPath = join(CONFIG.root, 'test', 'temp-comp.scss');
+    const tempTsPath = join(CONFIG.root, 'test', 'temp-comp.ts');
     await Bun.write(tempScssPath, '$bg: #3b82f6;\n.btn { background: $bg; }');
     await Bun.write(tempTsPath, 'import "./temp-comp.scss";\nexport const ok = true;');
     const origError = console.error;
     try {
-      const res = await fetch(`${devBase}/src/temp-comp.ts`);
+      const res = await fetch(`${devBase}/test/temp-comp.ts`);
       expect(res.status).toBe(200);
       const js = await res.text();
       expect(js).toContain('data-vite-sass');
@@ -860,12 +860,12 @@ describe('scss and sass support', () => {
 
   test('production build compiles and inlines SCSS entrypoint', async () => {
     const origHtml = await bunFile(join(CONFIG.root, 'index.html')).text();
-    const scssPath = join(CONFIG.srcDir, 'custom-test-theme.scss');
+    const scssPath = join(CONFIG.root, 'test', 'custom-test-theme.scss');
     await Bun.write(
       scssPath,
       '$brand: #8b5cf6;\n.brand-card {\n  background: $brand;\n  span {\n    color: #fff;\n  }\n}',
     );
-    const testHtml = origHtml.replace(/\/src\/style\.(?:css|scss)/, '/src/custom-test-theme.scss');
+    const testHtml = origHtml.replace(/\/src\/style\.(?:css|scss)/, '/test/custom-test-theme.scss');
     await Bun.write(join(CONFIG.root, 'index.html'), testHtml);
 
     try {

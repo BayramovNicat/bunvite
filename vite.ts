@@ -26,6 +26,7 @@ const MAX_CACHEABLE_ASSET_SIZE = 2 * 1024 * 1024; // 2 MB
 const IGNORED_WATCH_PREFIXES = [
   'node_modules',
   'dist',
+  'test',
   '.git',
   '.cache',
   '.vscode',
@@ -870,6 +871,10 @@ async function compileTypeScript(
     return { code: cachedJs.get(filePath)?.code ?? '' };
   }
 
+  if (!(await bunFile(filePath).exists())) {
+    return { error: `File not found: ${filePath}` };
+  }
+
   try {
     const build = await Bun.build({
       entrypoints: [filePath],
@@ -881,6 +886,9 @@ async function compileTypeScript(
     });
 
     if (!build.success || build.outputs.length === 0) {
+      if (!(await bunFile(filePath).exists())) {
+        return { error: `File not found: ${filePath}` };
+      }
       const error = build.logs.map((l) => l.message ?? String(l)).join('\n');
       console.error('❌ Build error:', error);
       return { error: error || 'Build failed' };
@@ -894,6 +902,9 @@ async function compileTypeScript(
     cachedJs.set(filePath, { code, timestamp: Date.now() });
     return { code };
   } catch (err: unknown) {
+    if (!(await bunFile(filePath).exists())) {
+      return { error: `File not found: ${filePath}` };
+    }
     const error = formatBuildError(err);
     console.error(`❌ Build error:\n${error}`);
     return { error };
@@ -937,7 +948,11 @@ export function createDevServer(
       watch(CONFIG.root, { recursive: true }, (_evt, rawFile) => {
         if (
           !rawFile ||
-          IGNORED_WATCH_PREFIXES.some((p) => rawFile.startsWith(p)) ||
+          IGNORED_WATCH_PREFIXES.some(
+            (p) => rawFile === p || rawFile.startsWith(`${p}/`),
+          ) ||
+          basename(rawFile).startsWith('temp-') ||
+          basename(rawFile).startsWith('tmp-') ||
           rawFile.endsWith('~') ||
           rawFile.endsWith('.swp') ||
           rawFile.endsWith('.tmp')
@@ -958,7 +973,7 @@ export function createDevServer(
             const targetPath = join(CONFIG.root, file);
             if (await bunFile(targetPath).exists()) {
               const res = await compileTypeScript(targetPath, true);
-              if ('error' in res) {
+              if ('error' in res && (await bunFile(targetPath).exists())) {
                 compileError = res.error;
               }
             }
@@ -968,7 +983,7 @@ export function createDevServer(
             const targetPath = join(CONFIG.root, file);
             if (await bunFile(targetPath).exists()) {
               const res = await compileSass({ inputPath: targetPath });
-              if (res.error) {
+              if (res.error && (await bunFile(targetPath).exists())) {
                 compileError = res.error;
               }
             }
