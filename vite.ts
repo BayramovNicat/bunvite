@@ -101,7 +101,7 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
     });
 
     const connect = () => {
-      ws = new WebSocket(\`\${proto}//\${location.host}/ws-hmr\`);
+      ws = new WebSocket(proto + "//" + location.host + "/ws-hmr");
       ws.onmessage = async (e) => {
         try {
           const payload = JSON.parse(e.data);
@@ -119,7 +119,7 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
               const url = new URL(link.href);
               if (url.pathname === payload.path || url.pathname.endsWith(".css")) {
                 const newLink = link.cloneNode();
-                newLink.href = \`\${url.pathname}?t=\${payload.timestamp}\`;
+                newLink.href = url.pathname + "?t=" + payload.timestamp;
                 newLink.onload = () => link.remove();
                 newLink.onerror = () => link.remove();
                 link.parentNode?.insertBefore(newLink, link.nextSibling);
@@ -139,7 +139,7 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
             } : null;
 
             try {
-              await import(\`\${normPath}?t=\${payload.timestamp}\`);
+              await import(normPath + "?t=" + payload.timestamp);
               dismissOverlay();
 
               if (inputState && inputState.value) {
