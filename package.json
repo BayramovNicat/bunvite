@@ -1,6 +1,17 @@
 {
   "name": "bunvite",
   "version": "1.0.0",
+  "description": "Blazing-fast zero-dependency Vite alternative powered purely by Bun.",
+  "license": "MIT",
+  "author": "Nicat Bayramov",
+  "keywords": [
+    "bun",
+    "vite",
+    "typescript",
+    "tailwindcss",
+    "starter",
+    "template"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/BayramovNicat/bunvite.git"
@@ -13,7 +24,7 @@
     "typecheck": "bunx tsc --noEmit",
     "lint": "bunx biome check .",
     "format": "bunx biome check --write .",
-    "test": "bun test test/app.test.ts",
+    "test": "bun test",
     "check": "bun run typecheck && bun run lint && bun run test"
   },
   "type": "module"

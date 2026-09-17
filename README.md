@@ -1,180 +1,50 @@
-# BunVite Starter
+# BunVite
 
-A minimal, zero-runtime-dependency frontend development engine and production bundler built on Bun, TypeScript, Tailwind CSS v4, and Sass/SCSS.
+A zero-dependency Vite alternative powered purely by Bun. Dev server, HMR, Tailwind CSS v4, Sass/SCSS, and production bundler inside a single script (`vite.ts`). No npm install required.
 
-Replaces standard npm Vite with a single self-contained script (`vite.ts`) utilizing native Bun APIs for development, hot module reloading, and production bundling.
-
----
-
-## Features
-
-- **Dev Server & HMR:** Module hot-reloading over WebSocket, in-memory TypeScript transforms, stylesheet hot-swapping, and active input focus preservation.
-- **SCSS & Sass Preprocessing:** Native compilation for `.scss` and `.sass` files via Dart Sass with disk caching, modular `@use`/`@import` load paths, and seamless Tailwind v4 chaining.
-- **Tailwind CSS v4:** Direct integration with `@tailwindcss/cli` via `Bun.spawn`, with in-memory caching and scoped source scanning.
-- **Error Overlay:** Terminal-style in-browser overlay displaying syntax errors with file paths, line/column positions, and codeframes.
-- **Environment Variables:** Automatic loading of `.env` files with `import.meta.env` exposure for `VITE_*` prefixes and `%VITE_*%` HTML substitution.
-- **API Dev Proxy:** Request forwarding for `/api/*` to backend endpoints with path rewrites, headers, and streaming duplex bodies.
-- **Port Handling:** Automatic port collision detection and incrementing when `5173` is busy.
-- **Conditional Caching:** 64-bit content ETags (`Bun.hash`) returning `304 Not Modified` during dev reloads.
-- **Dev CORS:** Permissive headers (`Access-Control-Allow-Origin: *`) and `OPTIONS` preflight handling.
-- **Static Assets:** Direct serving from `public/` during development and recursive copy to `dist/` on build.
-- **Production Pipeline:** Content-hashed bundles (`app.[hash].js`, `style.[hash].css`), minification, build size summary with gzip breakdown, and preview server with gzip compression and immutable caching headers.
-
----
-
-## Project Structure
-
-```text
-├── public/                # Static assets copied directly to dist/
-│   └── robots.txt
-├── src/
-│   ├── app.ts             # Application entrypoint
-│   └── style.css          # Tailwind CSS v4 stylesheet
-├── test/
-│   ├── app.test.ts        # WebKit DOM E2E tests
-│   └── vite.test.ts       # Engine, proxy, and integration tests
-├── types/
-│   ├── bun.d.ts           # Ambient Bun and test runner typings
-│   ├── env.d.ts           # Type definitions for import.meta.env
-│   └── styles.d.ts        # Module declarations for .scss, .sass, and .css
-├── .editorconfig          # Indentation and formatting rules
-├── .env.example           # Environment variable template
-├── .prettierrc.json       # Prettier formatting config
-├── biome.json             # Biome linter and formatter config
-├── index.html             # HTML entrypoint
-├── package.json           # Scripts and minimal dev dependencies
-├── tsconfig.json          # TypeScript compiler configuration
-└── vite.ts                # Dev server, bundler, and preview engine
-```
-
----
-
-## Getting Started
-
-### Prerequisites
-
-- [Bun](https://bun.sh) (v1.2 or higher)
-- Optional (for fastest builds): Styling CLIs installed globally:
-  ```bash
-  bun add -g @tailwindcss/cli sass
-  # or: npm install -g @tailwindcss/cli sass
-  # or: brew install tailwindcss sass/sass/sass/sass
-  ```
-  *(If omitted, Bun automatically runs `@tailwindcss/cli` and `sass` on-demand via `bunx` with zero repo overhead.)*
-
-### Quickstart
+## Quickstart
 
 ```bash
-# 1. Scaffold a clean copy of the starter
-bunx degit BayramovNicat/bunvite my-new-app
-
-# 2. Navigate into your project
-cd my-new-app
-
-# 3. Start development server immediately (zero install needed!)
+bunx degit BayramovNicat/bunvite my-app
+cd my-app
 bun run dev
 ```
 
----
+Open [http://localhost:5173](http://localhost:5173).
 
-## Available Scripts
+## Scripts
 
 | Command | Action |
 | :--- | :--- |
-| `bun run dev` | Starts dev server at `http://localhost:5173/` (`--open` or `-o` to launch browser) |
-| `bun run build` | Compiles hashed, minified production assets into `dist/` with gzip summary |
-| `bun run preview` | Serves `dist/` locally with gzip compression and immutable caching |
-| `bun run test` | Runs WebKit DOM app tests |
-| `bun run lint` | Checks code formatting and lints via Biome |
-| `bun run format` | Formats and auto-fixes code according to Biome rules |
-| `bun run typecheck` | Runs typecheck without emitting files (`bunx tsc --noEmit`) |
-| `bun run check` | Runs type checking, linting, and tests sequentially |
+| `bun run dev` | Start dev server with HMR (`--open` to launch browser) |
+| `bun run build` | Build minified and hashed assets to `dist/` |
+| `bun run preview` | Preview production build locally with gzip |
+| `bun run test` | Run tests (`bun test`) |
+| `bun run lint` | Lint code via Biome (`bunx biome check .`) |
+| `bun run format` | Auto-format code via Biome |
+| `bun run typecheck` | Run TypeScript check (`bunx tsc --noEmit`) |
+| `bun run check` | Run typecheck, lint, and tests sequentially |
 
----
+## What's Included
 
-## Configuration
+- **Zero dependencies:** No `vite`, `esbuild`, or heavy bundlers installed. Powered by native `Bun.serve` and `Bun.build`.
+- **Tailwind CSS v4 & Sass:** Compiles on demand via `bunx @tailwindcss/cli` and `sass`, with disk caching in `.cache/`.
+- **Fast HMR:** WebSocket hot reloading. Preserves state bound to `window.__hmr_state__` and keeps active input focus across reloads.
+- **Environment variables:** Automatically loads `.env`. Any `VITE_*` variable is injected into `import.meta.env` and replaced in `index.html` (e.g. `%VITE_APP_TITLE%`).
+- **API proxy:** Set `VITE_PROXY_TARGET=http://localhost:8080` in `.env` to route `/api/*` requests to your backend. Custom rules can be set in `CONFIG.proxy` in `vite.ts`.
+- **Production build:** Hashes output (`app.[hash].js`, `style.[hash].css`), outputs size and gzip breakdown, and serves preview with immutable caching headers.
 
-### Environment Variables
+## Project Layout
 
-Define variables in `.env` (refer to [`.env.example`](.env.example)):
-
-```bash
-# Variables prefixed with VITE_ are exposed to client code and HTML templates
-VITE_API_URL=https://api.example.com
-VITE_APP_TITLE=My Application
-
-# Optional: target URL for dev server /api proxy
-VITE_PROXY_TARGET=http://localhost:8080
+```text
+public/        Static assets (copied directly to dist/)
+src/           Application code (app.ts) and styles (style.css)
+test/          App and engine tests (app.test.ts, engine/vite.test.ts)
+types/         Ambient Bun and env declarations (vite.d.ts)
+index.html     HTML entrypoint
+vite.ts        Dev server, bundler, and preview engine
 ```
-
-Usage in client code:
-
-```typescript
-console.log(import.meta.env.VITE_API_URL);
-console.log(import.meta.env.DEV);
-```
-
-Usage in [`index.html`](index.html):
-
-```html
-<title>%VITE_APP_TITLE%</title>
-```
-
-### SCSS & Sass Preprocessing
-
-BunVite provides native support for `.scss` and `.sass` stylesheets:
-
-- **HTML Stylesheets:** Link `.scss` or `.sass` directly in `index.html`:
-  ```html
-  <link rel="stylesheet" href="/src/style.scss" />
-  ```
-  *(Requesting `/src/style.css` will also transparently resolve to `src/style.scss` if `.css` is absent).*
-- **TypeScript & JavaScript Imports:** Import styles inside component files:
-  ```typescript
-  import './components/card.scss';
-  ```
-- **Tailwind v4 Integration:** Combine Tailwind utilities with Sass variables, mixins, and nesting:
-  ```scss
-  @import "tailwindcss";
-
-  $brand: #6366f1;
-
-  .card {
-    background: $brand;
-    &:hover {
-      background: darken($brand, 10%);
-    }
-  }
-  ```
-- **Speed & Caching:** Compiled styles are cached in `.cache/sass/` using 64-bit content hashes for sub-millisecond incremental rebuilds.
-
-### API Dev Proxy
-
-Proxy rules can be defined via `VITE_PROXY_TARGET` in `.env` or customized in [`vite.ts`](vite.ts) under `CONFIG.proxy`:
-
-```typescript
-export const CONFIG = {
-  // ...
-  proxy: {
-    '/api': {
-      target: 'http://localhost:8080',
-      changeOrigin: true,
-      rewrite: (path) => path.replace(/^\/api/, '/v1'),
-    },
-  },
-};
-```
-
----
-
-## Code Style
-
-- **Indentation:** 2 spaces, enforced by `.editorconfig` and `biome.json`.
-- **Quotes:** Single quotes for TypeScript/JavaScript, double quotes for HTML/SVG attributes.
-- **Type Checking:** Strict TypeScript with types isolated in `types/`.
-
----
 
 ## License
 
-MIT
+[MIT](LICENSE)
