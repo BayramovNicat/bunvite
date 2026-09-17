@@ -1,5 +1,9 @@
 declare type Timer = ReturnType<typeof setTimeout>;
 
+declare interface Window {
+  __hmr_state__?: unknown;
+}
+
 declare interface ImportMetaEnv {
   readonly VITE_APP_NAME: string;
   readonly VITE_DEV_PORT: string;

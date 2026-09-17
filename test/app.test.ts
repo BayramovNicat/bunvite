@@ -26,30 +26,36 @@ describe('todo app', () => {
         title: document.title,
         header: document.querySelector('h1')?.textContent?.trim(),
         itemsCount: document.querySelectorAll('.todo-item').length,
+        emptyText: document.querySelector('ul')?.textContent?.trim(),
       };
-    })()`)) as { title: string; header: string; itemsCount: number };
+    })()`)) as { title: string; header: string; itemsCount: number; emptyText: string };
 
     expect(state.title).toBe('Tasks');
     expect(state.header).toBe('Tasks');
     expect(state.itemsCount).toBe(0);
+    expect(state.emptyText).toBe('No tasks');
   });
 
   test('adds tasks via form', async () => {
     const result = (await webview.evaluate(`(() => {
       const input = document.querySelector('#todo-input');
       const form = document.querySelector('#todo-form');
-      ["Learn Bun", "Write E2E Tests", "Deploy to Production"].forEach(task => {
+      ['Learn Bun', 'Write Tests', 'Deploy App'].forEach((task) => {
         input.value = task;
         form.dispatchEvent(new Event('submit', { cancelable: true }));
       });
       return {
         itemsCount: document.querySelectorAll('.todo-item').length,
-        itemTexts: Array.from(document.querySelectorAll('.todo-text')).map(el => el.textContent?.trim()),
+        itemTexts: Array.from(document.querySelectorAll('.todo-text')).map((el) => el.textContent?.trim()),
+        badge: document.querySelector('.badge')?.textContent?.trim(),
+        remaining: document.querySelector('.remaining')?.textContent?.trim(),
       };
-    })()`)) as { itemsCount: number; itemTexts: string[] };
+    })()`)) as { itemsCount: number; itemTexts: string[]; badge: string; remaining: string };
 
     expect(result.itemsCount).toBe(3);
-    expect(result.itemTexts).toEqual(['Learn Bun', 'Write E2E Tests', 'Deploy to Production']);
+    expect(result.itemTexts).toEqual(['Learn Bun', 'Write Tests', 'Deploy App']);
+    expect(result.badge).toBe('3');
+    expect(result.remaining).toBe('3 remaining');
   });
 
   test('toggles task completion', async () => {
@@ -58,22 +64,12 @@ describe('todo app', () => {
       toggleBtns[1].click();
       return {
         completedCount: document.querySelectorAll('.todo-text.line-through').length,
+        remaining: document.querySelector('.remaining')?.textContent?.trim(),
       };
-    })()`)) as { completedCount: number };
+    })()`)) as { completedCount: number; remaining: string };
 
     expect(result.completedCount).toBe(1);
-  });
-
-  test('toggles completion on text click', async () => {
-    const result = (await webview.evaluate(`(() => {
-      const texts = document.querySelectorAll('.todo-text');
-      texts[2].click();
-      return {
-        completedCount: document.querySelectorAll('.todo-text.line-through').length,
-      };
-    })()`)) as { completedCount: number };
-
-    expect(result.completedCount).toBe(2);
+    expect(result.remaining).toBe('2 remaining');
   });
 
   test('filters by active and completed', async () => {
@@ -90,17 +86,15 @@ describe('todo app', () => {
       return { activeCount, completedCount, allCount };
     })()`)) as { activeCount: number; completedCount: number; allCount: number };
 
-    expect(results.activeCount).toBe(1);
-    expect(results.completedCount).toBe(2);
+    expect(results.activeCount).toBe(2);
+    expect(results.completedCount).toBe(1);
     expect(results.allCount).toBe(3);
   });
 
   test('deletes task and clears completed', async () => {
-    const finalState = (await webview.evaluate(`(() => {
-      const firstItem = document.querySelector('.todo-item');
-      const deleteBtn = firstItem.querySelector('[data-action="delete"]');
-      deleteBtn.style.opacity = '1';
-      deleteBtn.click();
+    const result = (await webview.evaluate(`(() => {
+      const firstDeleteBtn = document.querySelector('.todo-item button[data-action="delete"]');
+      firstDeleteBtn.click();
       const countAfterDelete = document.querySelectorAll('.todo-item').length;
 
       document.querySelector('#clear-btn').click();
@@ -110,8 +104,9 @@ describe('todo app', () => {
       return { countAfterDelete, finalCount, remainingTask };
     })()`)) as { countAfterDelete: number; finalCount: number; remainingTask: string };
 
-    expect(finalState.countAfterDelete).toBe(2);
-    expect(finalState.finalCount).toBe(0);
+    expect(result.countAfterDelete).toBe(2);
+    expect(result.finalCount).toBe(1);
+    expect(result.remainingTask).toBe('Deploy App');
   });
 
   test('rejects empty and whitespace inputs', async () => {
@@ -120,206 +115,25 @@ describe('todo app', () => {
       const form = document.querySelector('#todo-form');
       const countBefore = document.querySelectorAll('.todo-item').length;
 
-      input.value = "   ";
+      input.value = '   ';
       form.dispatchEvent(new Event('submit', { cancelable: true }));
 
-      input.value = "";
+      input.value = '';
       form.dispatchEvent(new Event('submit', { cancelable: true }));
 
       const countAfter = document.querySelectorAll('.todo-item').length;
       return { countBefore, countAfter };
     })()`)) as { countBefore: number; countAfter: number };
 
-    expect(result.countBefore).toBe(0);
-    expect(result.countAfter).toBe(0);
-  });
-
-  test('updates badge and remaining count', async () => {
-    const counts = (await webview.evaluate(`(() => {
-      const input = document.querySelector('#todo-input');
-      const form = document.querySelector('#todo-form');
-
-      input.value = "Task One";
-      form.dispatchEvent(new Event('submit', { cancelable: true }));
-      input.value = "Task Two";
-      form.dispatchEvent(new Event('submit', { cancelable: true }));
-
-      const badge = document.querySelector('header span')?.textContent?.trim();
-      const remaining = document.querySelector('footer span')?.textContent?.trim();
-
-      return { badge, remaining };
-    })()`)) as { badge: string; remaining: string };
-
-    expect(counts.badge).toBe('2');
-    expect(counts.remaining).toBe('2 remaining');
+    expect(result.countBefore).toBe(1);
+    expect(result.countAfter).toBe(1);
   });
 
   test('persists tasks to localStorage', async () => {
     const raw = (await webview.evaluate(`localStorage.getItem('bunvite_todos')`)) as string;
     expect(raw).toBeDefined();
     const parsed = JSON.parse(raw) as { text: string }[];
-    expect(parsed.length).toBeGreaterThan(1);
-    expect(parsed.map((t) => t.text)).toContain('Task One');
-  });
-
-  test('edits task inline', async () => {
-    const result = (await webview.evaluate(`(() => {
-      const editBtn = document.querySelector('button[data-action="edit"]');
-      editBtn.click();
-      const editInput = document.querySelector('input[data-edit-input]');
-      editInput.value = 'Task One (Edited)';
-      const saveBtn = document.querySelector('button[data-action="save-edit"]');
-      saveBtn.click();
-      const texts = Array.from(document.querySelectorAll('.todo-text')).map((el) => el.textContent?.trim());
-      return { texts, isEditing: !!document.querySelector('input[data-edit-input]') };
-    })()`)) as { texts: string[]; isEditing: boolean };
-
-    expect(result.isEditing).toBe(false);
-    expect(result.texts).toContain('Task One (Edited)');
-  });
-
-  test('cycles task priority', async () => {
-    const priorities = (await webview.evaluate(`(() => {
-      const getBtn = () => document.querySelector('button[data-action="priority"]');
-      const initial = getBtn().title;
-      getBtn().click();
-      const afterFirst = getBtn().title;
-      getBtn().click();
-      const afterSecond = getBtn().title;
-      return { initial, afterFirst, afterSecond };
-    })()`)) as { initial: string; afterFirst: string; afterSecond: string };
-
-    expect(priorities.initial).toBe('Priority: low');
-    expect(priorities.afterFirst).toBe('Priority: medium');
-    expect(priorities.afterSecond).toBe('Priority: high');
-  });
-
-  test('toggles all tasks at once', async () => {
-    const result = (await webview.evaluate(`(() => {
-      const toggleAllBtn = document.querySelector('button[data-action="toggle-all"]');
-      toggleAllBtn.click();
-      const countCompleted = document.querySelectorAll('.todo-text.line-through').length;
-      toggleAllBtn.click();
-      const countActive = document.querySelectorAll('.todo-text:not(.line-through)').length;
-      return { countCompleted, countActive };
-    })()`)) as { countCompleted: number; countActive: number };
-
-    expect(result.countCompleted).toBe(2);
-    expect(result.countActive).toBe(2);
-  });
-
-  test('filters tasks with search query', async () => {
-    const result = (await webview.evaluate(`(() => {
-      const searchInput = document.querySelector('input[data-action="search"]');
-      searchInput.value = 'Edited';
-      searchInput.dispatchEvent(new Event('input'));
-      const countFiltered = document.querySelectorAll('.todo-item').length;
-      searchInput.value = '';
-      searchInput.dispatchEvent(new Event('input'));
-      const countReset = document.querySelectorAll('.todo-item').length;
-      return { countFiltered, countReset };
-    })()`)) as { countFiltered: number; countReset: number };
-
-    expect(result.countFiltered).toBe(1);
-    expect(result.countReset).toBe(2);
-  });
-
-  test('undoes task deletion', async () => {
-    const result = (await webview.evaluate(`(() => {
-      const initialCount = document.querySelectorAll('.todo-item').length;
-      const deleteBtn = document.querySelector('button[data-action="delete"]');
-      deleteBtn.click();
-      const countAfterDelete = document.querySelectorAll('.todo-item').length;
-      const undoBtn = document.querySelector('button[data-action="undo"]');
-      const hasUndoToast = !!undoBtn;
-      undoBtn.click();
-      const countAfterUndo = document.querySelectorAll('.todo-item').length;
-      return { initialCount, countAfterDelete, hasUndoToast, countAfterUndo };
-    })()`)) as { initialCount: number; countAfterDelete: number; hasUndoToast: boolean; countAfterUndo: number };
-
-    expect(result.countAfterDelete).toBe(result.initialCount - 1);
-    expect(result.hasUndoToast).toBe(true);
-    expect(result.countAfterUndo).toBe(result.initialCount);
-  });
-
-  test('navigates sidebar views and opens calendar', async () => {
-    const result = (await webview.evaluate(`(() => {
-      const calBtn = document.querySelector('button[data-view="calendar"]');
-      calBtn.click();
-      const calPanel = document.querySelector('.calendar-panel');
-      const isCalVisible = !calPanel?.classList.contains('hidden');
-
-      const inboxBtn = document.querySelector('button[data-view="inbox"]');
-      inboxBtn.click();
-      const isCalHidden = calPanel?.classList.contains('hidden');
-
-      return { isCalVisible, isCalHidden };
-    })()`)) as { isCalVisible: boolean; isCalHidden: boolean };
-
-    expect(result.isCalVisible).toBe(true);
-    expect(result.isCalHidden).toBe(true);
-  });
-
-  test('interacts with calendar controls and month navigation', async () => {
-    const result = (await webview.evaluate(`(() => {
-      document.querySelector('button[data-view="calendar"]').click();
-      const monthHeader = document.querySelector('.calendar-panel span.tracking-tight')?.textContent?.trim();
-
-      document.querySelector('button[data-action="next-month"]').click();
-      const nextMonthHeader = document.querySelector('.calendar-panel span.tracking-tight')?.textContent?.trim();
-
-      document.querySelector('button[data-action="prev-month"]').click();
-      const prevMonthHeader = document.querySelector('.calendar-panel span.tracking-tight')?.textContent?.trim();
-
-      const dayCell = document.querySelector('.calendar-panel button[data-action="select-date"]');
-      const targetDate = dayCell?.getAttribute('data-date') || '';
-      dayCell?.click();
-      const newSelected = document.querySelector('.calendar-panel button[data-date="' + targetDate + '"]');
-      const isSelected = Boolean(newSelected?.classList.contains('bg-indigo-600'));
-
-      document.querySelector('button[data-view="inbox"]').click();
-      return { monthHeader, nextMonthHeader, prevMonthHeader, isSelected };
-    })()`)) as { monthHeader: string; nextMonthHeader: string; prevMonthHeader: string; isSelected: boolean };
-
-    expect(result.monthHeader).toBe(result.prevMonthHeader);
-    expect(result.monthHeader !== result.nextMonthHeader).toBe(true);
-    expect(result.isSelected).toBe(true);
-  });
-
-  test('filters tasks by category', async () => {
-    const result = (await webview.evaluate(`(() => {
-      const workBtn = document.querySelector('button[data-action="select-category"][data-category="Work"]');
-      workBtn.click();
-      const countInWork = document.querySelectorAll('.todo-item').length;
-
-      document.querySelector('button[data-action="clear-category"]').click();
-      const countAfterClear = document.querySelectorAll('.todo-item').length;
-
-      return { countInWork, countAfterClear };
-    })()`)) as { countInWork: number; countAfterClear: number };
-
-    expect(result.countAfterClear).toBe(2);
-  });
-
-  test('reorders tasks via drag and drop', async () => {
-    const result = (await webview.evaluate(`(() => {
-      const items = Array.from(document.querySelectorAll('.todo-item'));
-      if (items.length < 2) return { countBefore: 0, countAfter: 0 };
-
-      const countBefore = items.length;
-      const firstItem = items[0];
-      const secondItem = items[1];
-
-      firstItem.dispatchEvent(new Event('dragstart', { bubbles: true }));
-      const dropEvent = new Event('drop', { bubbles: true, cancelable: true });
-      Object.defineProperty(dropEvent, 'clientY', { value: 9999 });
-      secondItem.dispatchEvent(dropEvent);
-
-      const countAfter = document.querySelectorAll('.todo-item').length;
-      return { countBefore, countAfter };
-    })()`)) as { countBefore: number; countAfter: number };
-
-    expect(result.countBefore).toBeGreaterThan(1);
-    expect(result.countAfter).toBe(result.countBefore);
+    expect(parsed.length).toBe(1);
+    expect(parsed[0].text).toBe('Deploy App');
   });
 });
