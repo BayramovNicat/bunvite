@@ -12,6 +12,8 @@ import {
   getNetworkUrl,
   getTailwindCommand,
   hasTailwindImport,
+  getAppEntrypoint,
+  getStyleEntrypoint,
   previewProduction,
   replaceEnvInHtml,
   startServerWithFallback,
@@ -97,6 +99,43 @@ describe('dev server', () => {
     expect(res.headers.get('content-type')).toContain('application/javascript');
     const js = await res.text();
     expect(js).toContain('window.__hmr_state__ ??=');
+  });
+
+  test('resolves app entrypoint and supports JavaScript files', async () => {
+    const entry = await getAppEntrypoint();
+    expect(entry.file === 'app.ts' || entry.file === 'app.js').toBe(true);
+
+    const tempJsPath = join(CONFIG.srcDir, 'temp-test.js');
+    await Bun.write(tempJsPath, 'const state = { count: 0 };\nexport const getCount = () => state.count;');
+    try {
+      const res = await fetch(`${devBase}/src/temp-test.js`);
+      expect(res.status).toBe(200);
+      const js = await res.text();
+      expect(js).toContain('window.__hmr_state__ ??=');
+      expect(js).toContain('getCount');
+    } finally {
+      await bunFile(tempJsPath).delete().catch(() => {});
+    }
+  });
+
+  test('resolves arbitrary script and style entrypoints from HTML', async () => {
+    const customHtml = `
+      <html>
+        <head>
+          <link rel="stylesheet" href="/src/custom-theme.css" />
+        </head>
+        <body>
+          <script type="module" src="/src/script.js"></script>
+        </body>
+      </html>
+    `;
+    const appEntry = await getAppEntrypoint(customHtml);
+    expect(appEntry.file).toBe('script.js');
+    expect(appEntry.rel).toBe('/src/script.js');
+
+    const styleEntry = await getStyleEntrypoint(customHtml);
+    expect(styleEntry.file).toBe('custom-theme.css');
+    expect(styleEntry.rel).toBe('/src/custom-theme.css');
   });
 
   test('serves static assets from public/', async () => {

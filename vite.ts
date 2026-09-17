@@ -174,7 +174,7 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
 </script>
 `;
 
-let cachedCss: { code: string; timestamp: number } | null = null;
+let cachedCss: { code: string; path?: string; timestamp: number } | null = null;
 const cachedJs = new Map<string, { code: string; timestamp: number }>();
 const TAILWIND_CACHE_DIR = join(CONFIG.root, '.cache', 'tailwind');
 
@@ -195,16 +195,62 @@ export function hasTailwindImport(cssText: string): boolean {
   return /@import\s+['"]tailwindcss/i.test(clean);
 }
 
+export interface EntrypointInfo {
+  file: string;
+  path: string;
+  rel: string;
+}
+
+export async function getAppEntrypoint(htmlSource?: string): Promise<EntrypointInfo> {
+  const html = htmlSource ?? (await bunFile(join(CONFIG.root, 'index.html')).text().catch(() => ''));
+  const match = html.match(/<script\b[^>]*?\bsrc=["']([^"']+\.(?:[tj]sx?|mjs))["'][^>]*>/i);
+  if (match) {
+    const rawSrc = match[1];
+    const cleanPath = rawSrc.replace(/^[./]+/, '');
+    const absPath = join(CONFIG.root, cleanPath);
+    return {
+      file: basename(cleanPath),
+      path: absPath,
+      rel: rawSrc.startsWith('/') ? rawSrc : `/${cleanPath}`,
+    };
+  }
+
+  const fallback = join(CONFIG.srcDir, 'app.ts');
+  return { file: 'app.ts', path: fallback, rel: '/src/app.ts' };
+}
+
+export async function getStyleEntrypoint(htmlSource?: string): Promise<EntrypointInfo> {
+  const html = htmlSource ?? (await bunFile(join(CONFIG.root, 'index.html')).text().catch(() => ''));
+  const linkMatches = html.matchAll(/<link\b[^>]*?\bhref=["']([^"']+\.css)["'][^>]*>/gi);
+  for (const m of linkMatches) {
+    if (/rel=["']stylesheet["']/i.test(m[0])) {
+      const rawHref = m[1];
+      const cleanPath = rawHref.replace(/^[./]+/, '');
+      const absPath = join(CONFIG.root, cleanPath);
+      return {
+        file: basename(cleanPath),
+        path: absPath,
+        rel: rawHref.startsWith('/') ? rawHref : `/${cleanPath}`,
+      };
+    }
+  }
+
+  const fallback = join(CONFIG.srcDir, 'style.css');
+  return { file: 'style.css', path: fallback, rel: '/src/style.css' };
+}
+
 async function getTailwindCacheKey(cssText: string): Promise<string> {
   const html = await bunFile(join(CONFIG.root, 'index.html')).text().catch(() => '');
-  const appTs = await bunFile(join(CONFIG.srcDir, 'app.ts')).text().catch(() => '');
-  return Bun.hash(`${cssText}:${html}:${appTs}`).toString(36);
+  const entry = await getAppEntrypoint();
+  const appCode = await bunFile(entry.path).text().catch(() => '');
+  return Bun.hash(`${cssText}:${html}:${appCode}`).toString(36);
 }
 
 export async function compileTailwindCss(
   options: { inputPath?: string; minify?: boolean; outputPath?: string; silent?: boolean } = {},
 ): Promise<string> {
-  const inputPath = options.inputPath ?? join(CONFIG.srcDir, 'style.css');
+  const styleEntry = await getStyleEntrypoint();
+  const inputPath = options.inputPath ?? styleEntry.path;
   const cssFile = bunFile(inputPath);
   if (!(await cssFile.exists())) {
     if (options.outputPath) {
@@ -276,13 +322,13 @@ export async function compileTailwindCss(
   return code;
 }
 
-async function compileTailwind(force = false): Promise<string> {
-  if (!force && cachedCss) {
+async function compileTailwind(force = false, inputPath?: string): Promise<string> {
+  if (!force && cachedCss && (!inputPath || cachedCss.path === inputPath)) {
     return cachedCss.code;
   }
 
-  const code = await compileTailwindCss({ minify: false, silent: true });
-  cachedCss = { code, timestamp: Date.now() };
+  const code = await compileTailwindCss({ inputPath, minify: false, silent: true });
+  cachedCss = { code, path: inputPath, timestamp: Date.now() };
   return code;
 }
 
@@ -516,19 +562,24 @@ export function createDevServer(
 
               const isCss = file.endsWith('.css');
               const isJsOrTs =
-                file.startsWith('src/') && (file.endsWith('.ts') || file.endsWith('.js'));
+                file.startsWith('src/') &&
+                (file.endsWith('.ts') ||
+                  file.endsWith('.js') ||
+                  file.endsWith('.tsx') ||
+                  file.endsWith('.jsx'));
               const isHtml = file.endsWith('.html');
 
-              const styleFile = bunFile(join(CONFIG.srcDir, 'style.css'));
+              const styleEntry = await getStyleEntrypoint();
+              const styleFile = bunFile(styleEntry.path);
               const usesTailwind =
                 (await styleFile.exists()) && hasTailwindImport(await styleFile.text());
 
               if (isCss || (usesTailwind && (isJsOrTs || isHtml))) {
-                await compileTailwind(true);
+                await compileTailwind(true, isCss ? join(CONFIG.root, file) : styleEntry.path);
                 socket.send(
                   JSON.stringify({
                     type: 'css-update',
-                    path: '/src/style.css',
+                    path: isCss ? `/${file}` : styleEntry.rel,
                     timestamp,
                   }),
                 );
@@ -622,12 +673,18 @@ export function createDevServer(
         return devResponse(req, html, 'text/html; charset=utf-8');
       }
 
-      if (pathname === '/src/style.css' || pathname.endsWith('.css')) {
-        const css = await compileTailwind();
+      if (pathname.endsWith('.css')) {
+        const filePath = join(CONFIG.root, pathname.replace(/^\//, ''));
+        const css = await compileTailwind(false, filePath);
         return devResponse(req, css, 'text/css; charset=utf-8');
       }
 
-      if (pathname.endsWith('.ts') || pathname.endsWith('.js')) {
+      if (
+        pathname.endsWith('.ts') ||
+        pathname.endsWith('.js') ||
+        pathname.endsWith('.tsx') ||
+        pathname.endsWith('.jsx')
+      ) {
         const filePath = join(CONFIG.root, pathname.replace(/^\//, ''));
         const result = await compileTypeScript(filePath);
 
@@ -705,15 +762,18 @@ export async function buildProduction(
   await cp(CONFIG.publicDir, CONFIG.distDir, { recursive: true }).catch(() => {});
   const t1 = performance.now();
 
-  const cssFile = `style.${Date.now().toString(36)}.css`;
+  const jsEntry = await getAppEntrypoint();
+  const styleEntry = await getStyleEntrypoint();
+  const cssBasename = styleEntry.file.replace(/\.css$/, '');
+  const cssFile = `${cssBasename}.${Date.now().toString(36)}.css`;
   const cssPath = join(assetsDir, cssFile);
 
   let tJsEnd = 0;
   const tJsStart = performance.now();
   const jsPromise = Bun.build({
-    entrypoints: [join(CONFIG.srcDir, 'app.ts')],
+    entrypoints: [jsEntry.path],
     outdir: assetsDir,
-    naming: 'app.[hash].js',
+    naming: '[name].[hash].js',
     target: 'browser',
     minify: true,
     define: getClientEnv('production'),
@@ -728,6 +788,7 @@ export async function buildProduction(
 
   const cssPromise = (async () => {
     cssContent = await compileTailwindCss({
+      inputPath: styleEntry.path,
       minify: true,
       outputPath: cssPath,
       silent,
@@ -748,11 +809,27 @@ export async function buildProduction(
   let html = await bunFile(join(CONFIG.root, 'index.html')).text();
   html = replaceEnvInHtml(html);
   const basePrefix = CONFIG.base === '/' ? '/' : CONFIG.base;
-  html = html.replace(
-    /<link\s+rel=["']stylesheet["']\s+href=["']\/src\/style\.css["']\s*\/?>/,
-    `<style>${cssContent}</style>`,
+
+  const styleRegex = new RegExp(
+    `<link\\s+[^>]*?href=["'](?:${styleEntry.rel.replace('/', '\\/')}|\\.?${styleEntry.rel.replace('/', '\\/')})["'][^>]*\\/?>`,
+    'i',
   );
-  html = html.replace('/src/app.ts', `${basePrefix}assets/${jsFile}`);
+  if (styleRegex.test(html)) {
+    html = html.replace(styleRegex, `<style>${cssContent}</style>`);
+  } else {
+    html = html.replace(
+      /<link\s+rel=["']stylesheet["']\s+href=["'][^"']+\.css["']\s*\/?>/i,
+      `<style>${cssContent}</style>`,
+    );
+  }
+
+  const scriptRegex = new RegExp(jsEntry.rel.replace('/', '\\/'), 'g');
+  if (scriptRegex.test(html)) {
+    html = html.replace(scriptRegex, `${basePrefix}assets/${jsFile}`);
+  } else {
+    html = html.replace(/\/src\/[a-zA-Z0-9_.-]+\.(?:[tj]sx?|mjs)/, `${basePrefix}assets/${jsFile}`);
+  }
+
   html = html.replace(
     '</head>',
     `  <link rel="modulepreload" href="${basePrefix}assets/${jsFile}" />\n  </head>`,
