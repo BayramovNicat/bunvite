@@ -15,7 +15,7 @@ This document details the architecture, conventions, and operational rules for w
 ## 1. Engine Core Principles
 
 - **Never install `vite`, `webpack`, `rollup`, `esbuild`, or bundler plugins.**
-- The root [`vite.ts`](file:///Users/nicat/Documents/antigravity/agitated-galileo/vite.ts) script is the entire dev server, HMR engine, and production bundler.
+- The root `vite.ts` script is the entire dev server, HMR engine, and production bundler.
 - It uses native Bun runtime APIs exclusively:
   - `Bun.serve` for HTTP, WebSocket, and duplex proxy handling.
   - `Bun.build` for client TypeScript compilation and production JS bundling.
@@ -29,7 +29,7 @@ This document details the architecture, conventions, and operational rules for w
 
 ## 2. Scripts and Commands
 
-Use the scripts defined in [`package.json`](file:///Users/nicat/Documents/antigravity/agitated-galileo/package.json):
+Use the scripts defined in `package.json`:
 
 | Command | Purpose | Details |
 | :--- | :--- | :--- |
@@ -46,9 +46,9 @@ Use the scripts defined in [`package.json`](file:///Users/nicat/Documents/antigr
 
 ## 3. Type Declarations
 
-All ambient declarations live in the root [`types/`](file:///Users/nicat/Documents/antigravity/agitated-galileo/types) folder. Keep `src/` free of `.d.ts` files.
+All ambient declarations live in the root `types/` folder. Keep `src/` free of `.d.ts` files.
 
-- [`types/vite.d.ts`](file:///Users/nicat/Documents/antigravity/agitated-galileo/types/vite.d.ts): Consolidated ambient declarations for Bun engine runtime (`Bun.serve`, `Bun.build`, `Bun.spawn`, `Bun.WebView`, `bun:test`, node shims), `import.meta.env`, and CSS/SCSS asset modules. Automatically and seamlessly merges with `@types/bun` if installed in `node_modules`.
+- `types/vite.d.ts`: Consolidated ambient declarations for Bun engine runtime (`Bun.serve`, `Bun.build`, `Bun.spawn`, `Bun.WebView`, `bun:test`, node shims), `import.meta.env`, and CSS/SCSS asset modules. Automatically and seamlessly merges with `@types/bun` if installed in `node_modules`.
 
 ---
 
@@ -89,7 +89,7 @@ Modifications to `src/style.css` or `.scss` / `.sass` stylesheets trigger an in-
 
 ## 6. Tailwind CSS v4 Source Scoping
 
-Tailwind v4 discovers and scans workspace files automatically. To prevent it from scanning documentation, markdown files, or tests (which inflates production CSS bundles), [`src/style.css`](file:///Users/nicat/Documents/antigravity/agitated-galileo/src/style.css) explicitly scopes input sources:
+Tailwind v4 discovers and scans workspace files automatically. To prevent it from scanning documentation, markdown files, or tests (which inflates production CSS bundles), `src/style.css` explicitly scopes input sources:
 
 ```css
 @import "tailwindcss" source(none);
@@ -97,7 +97,7 @@ Tailwind v4 discovers and scans workspace files automatically. To prevent it fro
 @source "./";
 ```
 
-VS Code CSS validation warnings on `source(none)` are suppressed via `css.validate: false` in [`.vscode/settings.json`](file:///Users/nicat/Documents/antigravity/agitated-galileo/.vscode/settings.json).
+VS Code CSS validation warnings on `source(none)` are suppressed via `css.validate: false` in `.vscode/settings.json`.
 
 ---
 
@@ -109,11 +109,11 @@ VS Code CSS validation warnings on `source(none)` are suppressed via `css.valida
 
 ### Adding Variables
 
-1. Add the key to [`.env`](file:///Users/nicat/Documents/antigravity/agitated-galileo/.env) and [`.env.example`](file:///Users/nicat/Documents/antigravity/agitated-galileo/.env.example):
+1. Add the key to `.env` and `.env.example`:
    ```bash
    VITE_APP_NAME=My App
    ```
-2. Declare the type in [`types/env.d.ts`](file:///Users/nicat/Documents/antigravity/agitated-galileo/types/env.d.ts):
+2. Declare the type in `types/env.d.ts`:
    ```typescript
    declare interface ImportMetaEnv {
      readonly VITE_APP_NAME: string;
@@ -129,7 +129,7 @@ VS Code CSS validation warnings on `source(none)` are suppressed via `css.valida
 ## 8. Static Assets
 
 - Do not use JavaScript asset imports (`import img from './logo.png'`).
-- Place static assets inside the [`public/`](file:///Users/nicat/Documents/antigravity/agitated-galileo/public) directory.
+- Place static assets inside the `public/` directory.
 - Access assets using root-relative paths:
   ```html
   <img src="/logo.svg" alt="Logo" />
@@ -140,10 +140,10 @@ VS Code CSS validation warnings on `source(none)` are suppressed via `css.valida
 
 ## 9. API Dev Proxy
 
-Proxy requests to local backend APIs by defining `VITE_PROXY_TARGET` in [`.env`](file:///Users/nicat/Documents/antigravity/agitated-galileo/.env):
+Proxy requests to local backend APIs by defining `VITE_PROXY_TARGET` in `.env`:
 
 ```bash
 VITE_PROXY_TARGET=http://localhost:8080
 ```
 
-Requests to `/api/*` are forwarded to the target URL with headers preserved, query parameters forwarded, and full request body streaming. Custom route rewrites can be added to `CONFIG.proxy` in [`vite.ts`](file:///Users/nicat/Documents/antigravity/agitated-galileo/vite.ts).
+Requests to `/api/*` are forwarded to the target URL with headers preserved, query parameters forwarded, and full request body streaming. Custom route rewrites can be added to `CONFIG.proxy` in `vite.ts`.
