@@ -3,6 +3,8 @@ import { join } from 'node:path';
 import { file as bunFile, type Server } from 'bun';
 import {
   buildProduction,
+  compileSass,
+  compileStylesheet,
   compileTailwindCss,
   CONFIG,
   createDevServer,
@@ -10,8 +12,10 @@ import {
   getBuildSummary,
   getClientEnv,
   getNetworkUrl,
+  getSassCommand,
   getTailwindCommand,
   hasTailwindImport,
+  isSassFile,
   getAppEntrypoint,
   getStyleEntrypoint,
   previewProduction,
@@ -667,5 +671,216 @@ describe('cors & etag caching', () => {
     expect(res.status).toBe(200);
     const code = await res.text();
     expect(code.length).toBeGreaterThan(0);
+  });
+});
+
+describe('scss and sass support', () => {
+  let devServer: Server<unknown>;
+  let devBase: string;
+
+  beforeAll(() => {
+    devServer = createDevServer(0, false);
+    devBase = `http://localhost:${devServer.port}`;
+  });
+
+  afterAll(() => {
+    devServer.stop(true);
+  });
+
+  test('resolves Sass command with fallback', () => {
+    const cmd = getSassCommand(['--version']);
+    const globalSass = Bun.which('sass');
+    if (globalSass) {
+      expect(cmd[0]).toBe(globalSass);
+    } else {
+      expect(cmd).toEqual(['bun', 'x', 'sass', '--version']);
+    }
+  });
+
+  test('identifies scss and sass file extensions', () => {
+    expect(isSassFile('style.scss')).toBe(true);
+    expect(isSassFile('theme.sass')).toBe(true);
+    expect(isSassFile('/path/to/component.scss')).toBe(true);
+    expect(isSassFile('style.css')).toBe(false);
+    expect(isSassFile('app.ts')).toBe(false);
+    expect(isSassFile('index.html')).toBe(false);
+  });
+
+  test('compiles SCSS syntax with nesting, variables, and mixins', async () => {
+    const tempScssPath = join(CONFIG.root, '.cache', 'nested-test.scss');
+    const source = `
+      $theme-color: #6366f1;
+      @mixin flex-center {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .card {
+        @include flex-center;
+        background-color: $theme-color;
+        .title {
+          font-weight: 700;
+        }
+      }
+    `;
+    await Bun.write(tempScssPath, source);
+    try {
+      const res = await compileSass({ inputPath: tempScssPath });
+      expect(res.error).toBeUndefined();
+      expect(res.code).toContain('background-color: #6366f1');
+      expect(res.code).toContain('.card .title');
+      expect(res.code).toContain('display: flex');
+    } finally {
+      await bunFile(tempScssPath).delete().catch(() => {});
+    }
+  });
+
+  test('supports minified output for SCSS', async () => {
+    const tempScssPath = join(CONFIG.root, '.cache', 'minify-test.scss');
+    const source = `
+      $bg: #18181b;
+      .panel {
+        background: $bg;
+        margin: 0;
+        padding: 10px;
+      }
+    `;
+    await Bun.write(tempScssPath, source);
+    try {
+      const res = await compileSass({ inputPath: tempScssPath, minify: true });
+      expect(res.error).toBeUndefined();
+      expect(res.code).toContain('.panel{');
+      expect(res.code).toContain('#18181b');
+    } finally {
+      await bunFile(tempScssPath).delete().catch(() => {});
+    }
+  });
+
+  test('handles SCSS compilation errors gracefully', async () => {
+    const tempScssPath = join(CONFIG.root, '.cache', 'broken-test.scss');
+    await Bun.write(tempScssPath, '$unclosed: ; .broken { color: $non-existent; }');
+    try {
+      const res = await compileSass({ inputPath: tempScssPath });
+      expect(res.error).toBeDefined();
+      expect(res.error?.toLowerCase()).toContain('error');
+    } finally {
+      await bunFile(tempScssPath).delete().catch(() => {});
+    }
+  });
+
+  test('dev server compiles and serves .scss file with text/css Content-Type', async () => {
+    const tempScssPath = join(CONFIG.srcDir, 'temp-server-test.scss');
+    await Bun.write(tempScssPath, '$primary: #10b981;\n.badge { color: $primary; }');
+    try {
+      const res = await fetch(`${devBase}/src/temp-server-test.scss`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('text/css');
+      const css = await res.text();
+      expect(css).toContain('color: #10b981');
+    } finally {
+      await bunFile(tempScssPath).delete().catch(() => {});
+    }
+  });
+
+  test('dev server resolves .css request to .scss file if .css is missing', async () => {
+    const tempScssPath = join(CONFIG.srcDir, 'temp-fallback-test.scss');
+    await Bun.write(tempScssPath, '$accent: #ec4899;\n.accent-box { border-color: $accent; }');
+    try {
+      const res = await fetch(`${devBase}/src/temp-fallback-test.css`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('text/css');
+      const css = await res.text();
+      expect(css).toContain('border-color: #ec4899');
+    } finally {
+      await bunFile(tempScssPath).delete().catch(() => {});
+    }
+  });
+
+  test('dev server returns 500 on SCSS compilation error', async () => {
+    const tempScssPath = join(CONFIG.srcDir, 'temp-invalid-syntax.scss');
+    await Bun.write(tempScssPath, '.invalid { color: $undefined_variable; }');
+    try {
+      const res = await fetch(`${devBase}/src/temp-invalid-syntax.scss`);
+      expect(res.status).toBe(500);
+      const text = await res.text();
+      expect(text.toLowerCase()).toContain('error');
+    } finally {
+      await bunFile(tempScssPath).delete().catch(() => {});
+    }
+  });
+
+  test('resolves .scss and .sass entrypoints from HTML', async () => {
+    const customHtml = `
+      <html>
+        <head>
+          <link rel="stylesheet" href="/src/theme.scss" />
+        </head>
+        <body>
+          <div id="app"></div>
+        </body>
+      </html>
+    `;
+    const styleEntry = await getStyleEntrypoint(customHtml);
+    expect(styleEntry.file).toBe('theme.scss');
+    expect(styleEntry.rel).toBe('/src/theme.scss');
+  });
+
+  test('compileStylesheet processes SCSS and minifies properly', async () => {
+    const tempScssPath = join(CONFIG.root, '.cache', 'stylesheet-test.scss');
+    await Bun.write(tempScssPath, '$header-color: #f59e0b;\nheader { color: $header-color; margin: 0; }');
+    try {
+      const res = await compileStylesheet({ inputPath: tempScssPath, minify: true });
+      expect(res.error).toBeUndefined();
+      expect(res.code).toContain('header{color:#f59e0b;margin:0}');
+    } finally {
+      await bunFile(tempScssPath).delete().catch(() => {});
+    }
+  });
+
+  test('compiles TypeScript importing .scss module with DOM injection', async () => {
+    const tempScssPath = join(CONFIG.srcDir, 'temp-comp.scss');
+    const tempTsPath = join(CONFIG.srcDir, 'temp-comp.ts');
+    await Bun.write(tempScssPath, '$bg: #3b82f6;\n.btn { background: $bg; }');
+    await Bun.write(tempTsPath, 'import "./temp-comp.scss";\nexport const ok = true;');
+    const origError = console.error;
+    try {
+      const res = await fetch(`${devBase}/src/temp-comp.ts`);
+      expect(res.status).toBe(200);
+      const js = await res.text();
+      expect(js).toContain('data-vite-sass');
+      expect(js).toContain('background: #3b82f6');
+    } finally {
+      console.error = () => {};
+      await bunFile(tempScssPath).delete().catch(() => {});
+      await bunFile(tempTsPath).delete().catch(() => {});
+      await new Promise((r) => setTimeout(r, 60));
+      console.error = origError;
+    }
+  });
+
+  test('production build compiles and inlines SCSS entrypoint', async () => {
+    const origHtml = await bunFile(join(CONFIG.root, 'index.html')).text();
+    const scssPath = join(CONFIG.srcDir, 'style.scss');
+    await Bun.write(
+      scssPath,
+      '$brand: #8b5cf6;\n.brand-card {\n  background: $brand;\n  span {\n    color: #fff;\n  }\n}',
+    );
+    const testHtml = origHtml.replace('/src/style.css', '/src/style.scss');
+    await Bun.write(join(CONFIG.root, 'index.html'), testHtml);
+
+    try {
+      const res = await buildProduction({ silent: true });
+      expect(res.summary.length).toBeGreaterThan(0);
+      const distIndex = bunFile(join(CONFIG.distDir, 'index.html'));
+      expect(await distIndex.exists()).toBe(true);
+      const builtHtml = await distIndex.text();
+      expect(builtHtml).toContain('.brand-card');
+      expect(builtHtml).toContain('#8b5cf6');
+      expect(builtHtml).toContain('.brand-card span');
+    } finally {
+      await Bun.write(join(CONFIG.root, 'index.html'), origHtml);
+      await bunFile(scssPath).delete().catch(() => {});
+      await buildProduction({ silent: true });
+    }
   });
 });

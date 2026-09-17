@@ -20,9 +20,10 @@ This document details the architecture, conventions, and operational rules for w
   - `Bun.serve` for HTTP, WebSocket, and duplex proxy handling.
   - `Bun.build` for client TypeScript compilation and production JS bundling.
   - `@tailwindcss/cli` executed through `Bun.spawn` for Tailwind CSS v4 compilation.
+  - Dart Sass CLI (`sass`) executed through `Bun.spawn` for SCSS and Sass compilation.
   - `Bun.hash` for 64-bit content ETags.
   - `Bun.gzipSync` for gzip calculation and production preview compression.
-- `package.json` contains only one dev dependency (`tailwindcss`). Linter (`biome`) and TypeScript compiler (`tsc`) run on demand via `bunx`.
+- `package.json` contains zero dependencies. Tooling runs on demand via `bunx` or native binaries (`tailwindcss`, `sass`, `biome`, `tsc`).
 
 ---
 
@@ -49,6 +50,7 @@ All ambient declarations live in the root [`types/`](file:///Users/nicat/Documen
 
 - [`types/bun.d.ts`](file:///Users/nicat/Documents/antigravity/agitated-galileo/types/bun.d.ts): Minimal ambient interfaces for `Bun.serve`, `Bun.build`, `Bun.spawn`, `Bun.WebView`, and `bun:test`.
 - [`types/env.d.ts`](file:///Users/nicat/Documents/antigravity/agitated-galileo/types/env.d.ts): Type definitions for `import.meta.env`.
+- [`types/styles.d.ts`](file:///Users/nicat/Documents/antigravity/agitated-galileo/types/styles.d.ts): Ambient module declarations for `*.scss`, `*.sass`, and `*.css` imports.
 
 ---
 
@@ -71,11 +73,23 @@ The HMR runtime records active focused input elements, their value, and cursor s
 
 ### Stylesheet Hot-Swapping
 
-Modifications to `src/style.css` trigger an in-memory CSS rebuild. The browser updates `<link rel="stylesheet">` tags with a timestamp parameter without reloading the document or losing JavaScript runtime state.
+Modifications to `src/style.css` or `.scss` / `.sass` stylesheets trigger an in-memory CSS rebuild. The browser updates `<link rel="stylesheet">` tags with a timestamp parameter without reloading the document or losing JavaScript runtime state.
 
 ---
 
-## 5. Tailwind CSS v4 Source Scoping
+## 5. SCSS & Sass Preprocessing
+
+- BunVite natively supports `.scss` and `.sass` stylesheets:
+  - Linked in HTML: `<link rel="stylesheet" href="/src/style.scss" />`
+  - Fallback resolution: requesting `/src/style.css` resolves to `src/style.scss` if `.css` is absent.
+  - Imported in TypeScript: `import './styles.scss';` (DOM `<style>` injection in dev, CSS asset bundle in production).
+- SCSS compilation is executed via Dart Sass CLI with multi-tier discovery (`Bun.which('sass')` -> local `node_modules` -> `bunx sass`).
+- Fast builds: Sass outputs are cached in `.cache/sass/` using 64-bit content hashes.
+- If SCSS imports Tailwind via `@import "tailwindcss";`, BunVite automatically pipes the compiled Sass output through the Tailwind compiler.
+
+---
+
+## 6. Tailwind CSS v4 Source Scoping
 
 Tailwind v4 discovers and scans workspace files automatically. To prevent it from scanning documentation, markdown files, or tests (which inflates production CSS bundles), [`src/style.css`](file:///Users/nicat/Documents/antigravity/agitated-galileo/src/style.css) explicitly scopes input sources:
 
@@ -89,7 +103,7 @@ VS Code CSS validation warnings on `source(none)` are suppressed via `css.valida
 
 ---
 
-## 6. Environment Variables (`import.meta.env`)
+## 7. Environment Variables (`import.meta.env`)
 
 - **Exposure rule:** Only variables with a `VITE_` prefix are bundled into client code or replaced in HTML templates.
 - **Server safety:** System variables without `VITE_` remain on the server and are never exposed to browser bundles.
@@ -114,7 +128,7 @@ VS Code CSS validation warnings on `source(none)` are suppressed via `css.valida
 
 ---
 
-## 7. Static Assets
+## 8. Static Assets
 
 - Do not use JavaScript asset imports (`import img from './logo.png'`).
 - Place static assets inside the [`public/`](file:///Users/nicat/Documents/antigravity/agitated-galileo/public) directory.
@@ -126,7 +140,7 @@ VS Code CSS validation warnings on `source(none)` are suppressed via `css.valida
 
 ---
 
-## 8. API Dev Proxy
+## 9. API Dev Proxy
 
 Proxy requests to local backend APIs by defining `VITE_PROXY_TARGET` in [`.env`](file:///Users/nicat/Documents/antigravity/agitated-galileo/.env):
 

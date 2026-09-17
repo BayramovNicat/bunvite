@@ -48,6 +48,7 @@ declare module 'bun:test' {
     toBe(expected: unknown): void;
     toEqual(expected: unknown): void;
     toBeDefined(): void;
+    toBeUndefined(): void;
     toBeGreaterThan(expected: number): void;
     toBeGreaterThanOrEqual(expected: number): void;
     toBeLessThan(expected: number): void;
@@ -55,6 +56,7 @@ declare module 'bun:test' {
     toBeNull(): void;
     not: {
       toBeNull(): void;
+      toBeUndefined(): void;
       toContain(expected: string): void;
     };
     toContain(expected: string): void;
@@ -82,7 +84,13 @@ declare namespace Bun {
       stdout?: 'inherit' | 'pipe' | 'ignore';
       stderr?: 'inherit' | 'pipe' | 'ignore';
     },
-  ): { exited: Promise<number>; stdout: ReadableStream; unref(): void };
+  ): {
+    exited: Promise<number>;
+    stdout: ReadableStream;
+    stderr: ReadableStream;
+    exitCode?: number;
+    unref(): void;
+  };
   export function serve<T = unknown>(
     options: import('bun').ServeOptions<T>,
   ): import('bun').Server<T>;
