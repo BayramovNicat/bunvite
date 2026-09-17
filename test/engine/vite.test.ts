@@ -18,6 +18,7 @@ import {
   isSassFile,
   getAppEntrypoint,
   getStyleEntrypoint,
+  isScriptFile,
   previewProduction,
   replaceEnvInHtml,
   startServerWithFallback,
@@ -76,7 +77,7 @@ describe('dev server', () => {
 
   test('detects presence and absence of Tailwind imports correctly', () => {
     expect(hasTailwindImport('@import "tailwindcss";')).toBe(true);
-    expect(hasTailwindImport('@import \'tailwindcss\' source(none);')).toBe(true);
+    expect(hasTailwindImport("@import 'tailwindcss' source(none);")).toBe(true);
     expect(hasTailwindImport('@import "tailwindcss/utilities";')).toBe(true);
     expect(hasTailwindImport('@tailwind base;')).toBe(false);
     expect(hasTailwindImport('/* @import "tailwindcss"; */\nbody { color: red; }')).toBe(false);
@@ -93,7 +94,9 @@ describe('dev server', () => {
       });
       expect(output).toBe('body{color:red;margin:0;}');
     } finally {
-      await bunFile(tempCssPath).delete().catch(() => {});
+      await bunFile(tempCssPath)
+        .delete()
+        .catch(() => {});
     }
   });
 
@@ -107,10 +110,15 @@ describe('dev server', () => {
 
   test('resolves app entrypoint and supports JavaScript files', async () => {
     const entry = await getAppEntrypoint();
-    expect(entry.file === 'app.ts' || entry.file === 'app.js').toBe(true);
+    expect(entry.file === 'app.tsx' || entry.file === 'app.ts' || entry.file === 'app.js').toBe(
+      true,
+    );
 
     const tempJsPath = join(CONFIG.root, 'test', 'temp-test.js');
-    await Bun.write(tempJsPath, 'const state = { count: 0 };\nexport const getCount = () => state.count;');
+    await Bun.write(
+      tempJsPath,
+      'const state = { count: 0 };\nexport const getCount = () => state.count;',
+    );
     try {
       const res = await fetch(`${devBase}/test/temp-test.js`);
       expect(res.status).toBe(200);
@@ -118,7 +126,9 @@ describe('dev server', () => {
       expect(js).toContain('window.__hmr_state__ ??=');
       expect(js).toContain('getCount');
     } finally {
-      await bunFile(tempJsPath).delete().catch(() => {});
+      await bunFile(tempJsPath)
+        .delete()
+        .catch(() => {});
     }
   });
 
@@ -731,7 +741,9 @@ describe('scss and sass support', () => {
       expect(res.code).toContain('.card .title');
       expect(res.code).toContain('display: flex');
     } finally {
-      await bunFile(tempScssPath).delete().catch(() => {});
+      await bunFile(tempScssPath)
+        .delete()
+        .catch(() => {});
     }
   });
 
@@ -752,7 +764,9 @@ describe('scss and sass support', () => {
       expect(res.code).toContain('.panel{');
       expect(res.code).toContain('#18181b');
     } finally {
-      await bunFile(tempScssPath).delete().catch(() => {});
+      await bunFile(tempScssPath)
+        .delete()
+        .catch(() => {});
     }
   });
 
@@ -764,7 +778,9 @@ describe('scss and sass support', () => {
       expect(res.error).toBeDefined();
       expect(res.error?.toLowerCase()).toContain('error');
     } finally {
-      await bunFile(tempScssPath).delete().catch(() => {});
+      await bunFile(tempScssPath)
+        .delete()
+        .catch(() => {});
     }
   });
 
@@ -778,7 +794,9 @@ describe('scss and sass support', () => {
       const css = await res.text();
       expect(css).toContain('color: #10b981');
     } finally {
-      await bunFile(tempScssPath).delete().catch(() => {});
+      await bunFile(tempScssPath)
+        .delete()
+        .catch(() => {});
     }
   });
 
@@ -792,7 +810,9 @@ describe('scss and sass support', () => {
       const css = await res.text();
       expect(css).toContain('border-color: #ec4899');
     } finally {
-      await bunFile(tempScssPath).delete().catch(() => {});
+      await bunFile(tempScssPath)
+        .delete()
+        .catch(() => {});
     }
   });
 
@@ -805,7 +825,9 @@ describe('scss and sass support', () => {
       const text = await res.text();
       expect(text.toLowerCase()).toContain('error');
     } finally {
-      await bunFile(tempScssPath).delete().catch(() => {});
+      await bunFile(tempScssPath)
+        .delete()
+        .catch(() => {});
     }
   });
 
@@ -827,13 +849,18 @@ describe('scss and sass support', () => {
 
   test('compileStylesheet processes SCSS and minifies properly', async () => {
     const tempScssPath = join(CONFIG.root, '.cache', 'stylesheet-test.scss');
-    await Bun.write(tempScssPath, '$header-color: #f59e0b;\nheader { color: $header-color; margin: 0; }');
+    await Bun.write(
+      tempScssPath,
+      '$header-color: #f59e0b;\nheader { color: $header-color; margin: 0; }',
+    );
     try {
       const res = await compileStylesheet({ inputPath: tempScssPath, minify: true });
       expect(res.error).toBeUndefined();
       expect(res.code).toContain('header{color:#f59e0b;margin:0}');
     } finally {
-      await bunFile(tempScssPath).delete().catch(() => {});
+      await bunFile(tempScssPath)
+        .delete()
+        .catch(() => {});
     }
   });
 
@@ -851,8 +878,12 @@ describe('scss and sass support', () => {
       expect(js).toContain('background: #3b82f6');
     } finally {
       console.error = () => {};
-      await bunFile(tempScssPath).delete().catch(() => {});
-      await bunFile(tempTsPath).delete().catch(() => {});
+      await bunFile(tempScssPath)
+        .delete()
+        .catch(() => {});
+      await bunFile(tempTsPath)
+        .delete()
+        .catch(() => {});
       await new Promise((r) => setTimeout(r, 60));
       console.error = origError;
     }
@@ -879,7 +910,173 @@ describe('scss and sass support', () => {
       expect(builtHtml).toContain('.brand-card span');
     } finally {
       await Bun.write(join(CONFIG.root, 'index.html'), origHtml);
-      await bunFile(scssPath).delete().catch(() => {});
+      await bunFile(scssPath)
+        .delete()
+        .catch(() => {});
+      await buildProduction({ silent: true });
+    }
+  });
+});
+
+describe('jsx and tsx support', () => {
+  let devServer: Server<unknown>;
+  let devBase: string;
+
+  beforeAll(() => {
+    devServer = createDevServer(0, false);
+    devBase = `http://localhost:${devServer.port}`;
+  });
+
+  afterAll(() => {
+    devServer.stop(true);
+  });
+
+  test('identifies script and jsx/tsx file extensions', () => {
+    expect(isScriptFile('app.ts')).toBe(true);
+    expect(isScriptFile('app.js')).toBe(true);
+    expect(isScriptFile('app.tsx')).toBe(true);
+    expect(isScriptFile('app.jsx')).toBe(true);
+    expect(isScriptFile('module.mjs')).toBe(true);
+    expect(isScriptFile('style.css')).toBe(false);
+    expect(isScriptFile('style.scss')).toBe(false);
+    expect(isScriptFile('index.html')).toBe(false);
+  });
+
+  test('dev server compiles and serves .tsx component', async () => {
+    const tempTsxPath = join(CONFIG.root, 'test', 'temp-widget.tsx');
+    await Bun.write(
+      tempTsxPath,
+      'export const Widget = ({ name }: { name: string }) => (\n  <div className="widget-card">\n    <span>{name}</span>\n  </div>\n);',
+    );
+    try {
+      const res = await fetch(`${devBase}/test/temp-widget.tsx`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('application/javascript');
+      const js = await res.text();
+      expect(js).toContain('Widget');
+      expect(js).toContain('widget-card');
+    } finally {
+      await bunFile(tempTsxPath)
+        .delete()
+        .catch(() => {});
+    }
+  });
+
+  test('dev server compiles and serves .jsx component', async () => {
+    const tempJsxPath = join(CONFIG.root, 'test', 'temp-banner.jsx');
+    await Bun.write(
+      tempJsxPath,
+      'export const Banner = ({ text }) => <h1 className="banner-heading">{text}</h1>;',
+    );
+    try {
+      const res = await fetch(`${devBase}/test/temp-banner.jsx`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('application/javascript');
+      const js = await res.text();
+      expect(js).toContain('Banner');
+      expect(js).toContain('banner-heading');
+    } finally {
+      await bunFile(tempJsxPath)
+        .delete()
+        .catch(() => {});
+    }
+  });
+
+  test('dev server resolves .js request to .tsx file when .js is absent', async () => {
+    const tempTsxPath = join(CONFIG.root, 'test', 'temp-fallback-component.tsx');
+    await Bun.write(
+      tempTsxPath,
+      'export const FallbackItem = () => <p className="fallback-text">Resolved TSX</p>;',
+    );
+    try {
+      const res = await fetch(`${devBase}/test/temp-fallback-component.js`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('application/javascript');
+      const js = await res.text();
+      expect(js).toContain('FallbackItem');
+      expect(js).toContain('fallback-text');
+    } finally {
+      await bunFile(tempTsxPath)
+        .delete()
+        .catch(() => {});
+    }
+  });
+
+  test('dev server preserves state in .tsx component via HMR transform', async () => {
+    const tempTsxPath = join(CONFIG.root, 'test', 'temp-state-widget.tsx');
+    await Bun.write(
+      tempTsxPath,
+      'const state = { count: 99 };\nexport const Counter = () => <button>{state.count}</button>;',
+    );
+    try {
+      const res = await fetch(`${devBase}/test/temp-state-widget.tsx`);
+      expect(res.status).toBe(200);
+      const js = await res.text();
+      expect(js).toContain('window.__hmr_state__ ??=');
+      expect(js).toContain('count: 99');
+    } finally {
+      await bunFile(tempTsxPath)
+        .delete()
+        .catch(() => {});
+    }
+  });
+
+  test('resolves .tsx and .jsx script entrypoints from HTML', async () => {
+    const tsxHtml = `
+      <html>
+        <head></head>
+        <body>
+          <script type="module" src="/src/main.tsx"></script>
+        </body>
+      </html>
+    `;
+    const tsxEntry = await getAppEntrypoint(tsxHtml);
+    expect(tsxEntry.file).toBe('main.tsx');
+    expect(tsxEntry.rel).toBe('/src/main.tsx');
+
+    const jsxHtml = `
+      <html>
+        <head></head>
+        <body>
+          <script type="module" src="/src/main.jsx"></script>
+        </body>
+      </html>
+    `;
+    const jsxEntry = await getAppEntrypoint(jsxHtml);
+    expect(jsxEntry.file).toBe('main.jsx');
+    expect(jsxEntry.rel).toBe('/src/main.jsx');
+  });
+
+  test('production build compiles and bundles .tsx entrypoint', async () => {
+    const origHtml = await bunFile(join(CONFIG.root, 'index.html')).text();
+    const tsxPath = join(CONFIG.root, 'test', 'custom-test-entry.tsx');
+    await Bun.write(
+      tsxPath,
+      'export const App = () => <div className="prod-tsx-root">Production TSX Ready</div>;\nconsole.log(App());',
+    );
+    const testHtml = origHtml.replace(
+      /\/src\/app\.(?:tsx|jsx|ts|js)/,
+      '/test/custom-test-entry.tsx',
+    );
+    await Bun.write(join(CONFIG.root, 'index.html'), testHtml);
+
+    try {
+      const res = await buildProduction({ silent: true });
+      expect(res.summary.length).toBeGreaterThan(0);
+      const distIndex = bunFile(join(CONFIG.distDir, 'index.html'));
+      expect(await distIndex.exists()).toBe(true);
+      const builtHtml = await distIndex.text();
+      expect(builtHtml).toMatch(/\/assets\/custom-test-entry\.[a-z0-9]+\.js/);
+
+      const match = builtHtml.match(/\/assets\/(custom-test-entry\.[a-z0-9]+\.js)/);
+      expect(match).not.toBeNull();
+      const bundledJs = await bunFile(join(CONFIG.distDir, 'assets', match?.[1] ?? '')).text();
+      expect(bundledJs).toContain('Production TSX Ready');
+    } finally {
+      await Bun.write(join(CONFIG.root, 'index.html'), origHtml);
+      await bunFile(tsxPath)
+        .delete()
+        .catch(() => {});
       await buildProduction({ silent: true });
     }
   });

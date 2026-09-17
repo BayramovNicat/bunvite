@@ -18,7 +18,7 @@ This document details the architecture, conventions, and operational rules for w
 - The root `vite.ts` script is the entire dev server, HMR engine, and production bundler.
 - It uses native Bun runtime APIs exclusively:
   - `Bun.serve` for HTTP, WebSocket, and duplex proxy handling.
-  - `Bun.build` for client TypeScript compilation and production JS bundling.
+  - `Bun.build` for client TypeScript, JavaScript, and JSX/TSX compilation and production bundling.
   - `@tailwindcss/cli` executed through `Bun.spawn` for Tailwind CSS v4 compilation.
   - Dart Sass CLI (`sass`) executed through `Bun.spawn` for SCSS and Sass compilation.
   - `Bun.hash` for 64-bit content ETags.
@@ -48,7 +48,7 @@ Use the scripts defined in `package.json`:
 
 All ambient declarations live in the root `types/` folder. Keep `src/` free of `.d.ts` files.
 
-- `types/vite.d.ts`: Consolidated ambient declarations for Bun engine runtime (`Bun.serve`, `Bun.build`, `Bun.spawn`, `Bun.WebView`, `bun:test`, node shims), `import.meta.env`, and CSS/SCSS asset modules. Automatically and seamlessly merges with `@types/bun` if installed in `node_modules`.
+- `types/vite.d.ts`: Consolidated ambient declarations for Bun engine runtime (`Bun.serve`, `Bun.build`, `Bun.spawn`, `Bun.WebView`, `bun:test`, node shims), `import.meta.env`, JSX/React namespaces, and CSS/SCSS asset modules. Automatically and seamlessly merges with `@types/bun` if installed in `node_modules`.
 
 ---
 

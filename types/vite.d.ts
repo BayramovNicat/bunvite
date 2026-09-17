@@ -109,6 +109,7 @@ declare namespace Bun {
     options: import('bun').ServeOptions<T>,
   ): import('bun').Server<T>;
   export function which(name: string): string | null;
+  export function resolveSync(path: string, from?: string): string;
   export function build(options: unknown): Promise<{
     success: boolean;
     outputs: Array<{ path: string; text(): Promise<string> }>;
@@ -160,3 +161,45 @@ declare module '*.module.css' {
 declare module '*.css';
 declare module '*.scss';
 declare module '*.sass';
+
+declare var React: any;
+
+declare module 'react/jsx-runtime' {
+  export namespace JSX {
+    interface Element extends HTMLElement {}
+    interface IntrinsicElements {
+      [elemName: string]: any;
+    }
+    interface IntrinsicAttributes {
+      key?: string | number | null | undefined;
+    }
+  }
+  export function jsx(type: any, props: any, key?: any): any;
+  export function jsxs(type: any, props: any, key?: any): any;
+  export const Fragment: any;
+}
+
+declare module 'react/jsx-dev-runtime' {
+  export namespace JSX {
+    interface Element extends HTMLElement {}
+    interface IntrinsicElements {
+      [elemName: string]: any;
+    }
+    interface IntrinsicAttributes {
+      key?: string | number | null | undefined;
+    }
+  }
+  export function jsxDEV(type: any, props: any, key?: any, isStatic?: boolean, source?: any, self?: any): any;
+  export const Fragment: any;
+}
+
+declare namespace JSX {
+  interface IntrinsicElements {
+    [elemName: string]: any;
+  }
+  interface Element extends HTMLElement {}
+  interface IntrinsicAttributes {
+    key?: string | number | null | undefined;
+  }
+}
+

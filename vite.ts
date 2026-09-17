@@ -644,6 +644,119 @@ export function createSassBunPlugin(mode: 'development' | 'production') {
     },
   };
 }
+
+export function isScriptFile(filePath: string): boolean {
+  return /\.(?:[tj]sx?|mjs)$/i.test(filePath);
+}
+
+export function createJsxBunPlugin() {
+  return {
+    name: 'bunvite-jsx-plugin',
+    setup(build: {
+      onResolve(
+        options: { filter: RegExp },
+        callback: (args: { path: string }) => { path: string; namespace?: string } | undefined,
+      ): void;
+      onLoad(
+        options: { filter: RegExp; namespace?: string },
+        callback: (args: { path: string }) => { contents: string; loader: 'js' },
+      ): void;
+    }) {
+      try {
+        Bun.resolveSync('react', CONFIG.root);
+        return;
+      } catch {}
+
+      build.onResolve({ filter: /^react(\/.*)?$/ }, (args: { path: string }) => {
+        return { path: args.path, namespace: 'bunvite-jsx' };
+      });
+
+      build.onLoad({ filter: /.*/, namespace: 'bunvite-jsx' }, () => {
+        const contents = `
+          export const Fragment = Symbol.for('react.fragment');
+
+          const SVG_TAGS = new Set([
+            'svg', 'path', 'circle', 'line', 'rect', 'polygon', 'polyline', 'ellipse', 'g', 'text', 'defs', 'use', 'clippath'
+          ]);
+
+          function appendChildren(parent, children) {
+            if (children == null || children === false || children === true) return;
+            if (Array.isArray(children)) {
+              for (const child of children) appendChildren(parent, child);
+            } else if (typeof children === 'object' && children !== null && 'nodeType' in children) {
+              parent.appendChild(children);
+            } else {
+              parent.appendChild(document.createTextNode(String(children)));
+            }
+          }
+
+          export function jsx(type, props, key) {
+            if (typeof type === 'function') {
+              return type({ ...props, key });
+            }
+            if (type === Fragment) {
+              if (typeof document === 'undefined') {
+                return { type, props, key };
+              }
+              const frag = document.createDocumentFragment();
+              if (props && props.children !== undefined) {
+                appendChildren(frag, props.children);
+              }
+              return frag;
+            }
+            if (typeof document === 'undefined') {
+              return { type, props: key !== undefined ? { ...props, key } : props, key };
+            }
+
+            const isSvg = typeof type === 'string' && SVG_TAGS.has(type.toLowerCase());
+            const el = isSvg
+              ? document.createElementNS('http://www.w3.org/2000/svg', type)
+              : document.createElement(type);
+
+            if (props) {
+              for (const [k, v] of Object.entries(props)) {
+                if (k === 'children' || k === 'key' || v == null) continue;
+                if (k === 'className' || k === 'class') {
+                  el.setAttribute('class', String(v));
+                } else if (k.startsWith('on') && typeof v === 'function') {
+                  const eventName = k.slice(2).toLowerCase();
+                  el.addEventListener(eventName, v);
+                } else if (k === 'style' && typeof v === 'object' && v !== null) {
+                  Object.assign(el.style, v);
+                } else if (k === 'dangerouslySetInnerHTML' && v && typeof v === 'object' && '__html' in v) {
+                  el.innerHTML = v.__html;
+                } else if (typeof v === 'boolean') {
+                  if (v) el.setAttribute(k, '');
+                  else el.removeAttribute(k);
+                } else {
+                  el.setAttribute(k, String(v));
+                }
+              }
+              if (props.children !== undefined) {
+                appendChildren(el, props.children);
+              }
+            }
+            return el;
+          }
+
+          export const jsxs = jsx;
+          export const jsxDEV = jsx;
+
+          export function createElement(type, props, ...children) {
+            const normalizedProps = { ...props };
+            if (children.length > 0) {
+              normalizedProps.children = children.length === 1 ? children[0] : children;
+            }
+            return jsx(type, normalizedProps, props?.key);
+          }
+
+          export default { createElement, Fragment, jsx, jsxs, jsxDEV };
+        `;
+        return { contents, loader: 'js' };
+      });
+    },
+  };
+}
 // #endregion 3. Tailwind & Sass CSS Compiler & Caching
 
 // #region 4. Entrypoint Discovery
@@ -655,11 +768,37 @@ export async function getAppEntrypoint(htmlSource?: string): Promise<EntrypointI
     const rawSrc = match[1];
     const cleanPath = rawSrc.replace(/^[./]+/, '');
     const absPath = join(CONFIG.root, cleanPath);
+    if (existsSync(absPath)) {
+      return {
+        file: basename(cleanPath),
+        path: absPath,
+        rel: rawSrc.startsWith('/') ? rawSrc : `/${cleanPath}`,
+      };
+    }
+    const baseWithoutExt = absPath.replace(/\.(?:[tj]sx?|mjs)$/, '');
+    for (const ext of ['.tsx', '.ts', '.jsx', '.js'] as const) {
+      const candidate = `${baseWithoutExt}${ext}`;
+      if (existsSync(candidate)) {
+        const file = basename(candidate);
+        const rel = (rawSrc.startsWith('/') ? rawSrc : `/${cleanPath}`).replace(
+          /\.(?:[tj]sx?|mjs)$/,
+          ext,
+        );
+        return { file, path: candidate, rel };
+      }
+    }
     return {
       file: basename(cleanPath),
       path: absPath,
       rel: rawSrc.startsWith('/') ? rawSrc : `/${cleanPath}`,
     };
+  }
+
+  for (const ext of ['tsx', 'ts', 'jsx', 'js'] as const) {
+    const p = join(CONFIG.srcDir, `app.${ext}`);
+    if (existsSync(p)) {
+      return { file: `app.${ext}`, path: p, rel: `/src/app.${ext}` };
+    }
   }
 
   const fallback = join(CONFIG.srcDir, 'app.ts');
@@ -884,7 +1023,7 @@ async function compileTypeScript(
       sourcemap: 'inline',
       minify: false,
       define: getClientEnv('development'),
-      plugins: [createSassBunPlugin('development')],
+      plugins: [createSassBunPlugin('development'), createJsxBunPlugin()],
     });
 
     if (!build.success || build.outputs.length === 0) {
@@ -916,7 +1055,7 @@ async function compileTypeScript(
 function invalidateAssetCache(file?: string) {
   cachedCss = null;
   staticAssetCache.clear();
-  if (!file || file.endsWith('.ts') || file.endsWith('.js') || isSassFile(file)) {
+  if (!file || isScriptFile(file) || isSassFile(file)) {
     cachedJs.clear();
   }
 }
@@ -971,7 +1110,7 @@ export function createDevServer(
 
           let compileError: string | null = null;
 
-          if (file.startsWith('src/') && (file.endsWith('.ts') || file.endsWith('.js'))) {
+          if (file.startsWith('src/') && isScriptFile(file)) {
             const targetPath = join(CONFIG.root, file);
             if (await bunFile(targetPath).exists()) {
               const res = await compileTypeScript(targetPath, true);
@@ -1172,14 +1311,30 @@ export function createDevServer(
         }
       }
 
-      if (
-        pathname.endsWith('.ts') ||
-        pathname.endsWith('.js') ||
-        pathname.endsWith('.tsx') ||
-        pathname.endsWith('.jsx')
-      ) {
-        const filePath = join(CONFIG.root, cleanPath);
-        const result = await compileTypeScript(filePath);
+      let scriptFilePath = isScriptFile(pathname) ? join(CONFIG.root, cleanPath) : null;
+      if (!scriptFilePath && pathname.startsWith('/src/')) {
+        const candidateBase = join(CONFIG.root, cleanPath);
+        for (const ext of ['.tsx', '.ts', '.jsx', '.js'] as const) {
+          if (existsSync(`${candidateBase}${ext}`)) {
+            scriptFilePath = `${candidateBase}${ext}`;
+            break;
+          }
+        }
+      }
+
+      if (scriptFilePath) {
+        if (!existsSync(scriptFilePath)) {
+          const baseWithoutExt = scriptFilePath.replace(/\.(?:[tj]sx?|mjs)$/, '');
+          for (const ext of ['.tsx', '.ts', '.jsx', '.js'] as const) {
+            const candidate = `${baseWithoutExt}${ext}`;
+            if (existsSync(candidate)) {
+              scriptFilePath = candidate;
+              break;
+            }
+          }
+        }
+
+        const result = await compileTypeScript(scriptFilePath);
 
         if ('error' in result) {
           for (const socket of activeSockets) {
@@ -1257,7 +1412,7 @@ export async function buildProduction(
     target: 'browser',
     minify: true,
     define: getClientEnv('production'),
-    plugins: [createSassBunPlugin('production')],
+    plugins: [createSassBunPlugin('production'), createJsxBunPlugin()],
   }).then((res) => {
     tJsEnd = performance.now();
     return res;
