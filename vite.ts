@@ -4,10 +4,7 @@ import { networkInterfaces } from 'node:os';
 import { basename, join } from 'node:path';
 import { file as bunFile, type Server, type ServerWebSocket, serve } from 'bun';
 
-// ============================================================================
-// 1. Configuration & Types
-// ============================================================================
-
+// #region 1. Configuration & Types
 export const CONFIG = {
   root: import.meta.dir,
   srcDir: join(import.meta.dir, 'src'),
@@ -90,11 +87,9 @@ interface StaticCacheEntry {
 let cachedCss: { code: string; path?: string; timestamp: number } | null = null;
 const cachedJs = new Map<string, { code: string; timestamp: number }>();
 const staticAssetCache = new Map<string, StaticCacheEntry>();
+// #endregion 1. Configuration & Types
 
-// ============================================================================
-// 2. HMR Client Runtime & Error Overlay
-// ============================================================================
-
+// #region 2. HMR Client Runtime & Error Overlay
 const HMR_CLIENT_SCRIPT = /*html*/ `
 <script>
   (() => {
@@ -241,11 +236,9 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
   })();
 </script>
 `;
+// #endregion 2. HMR Client Runtime & Error Overlay
 
-// ============================================================================
-// 3. Tailwind CSS Compiler & Caching
-// ============================================================================
-
+// #region 3. Tailwind CSS Compiler & Caching
 export function getTailwindCommand(args: string[]): string[] {
   const globalBin = Bun.which('tailwindcss');
   if (globalBin) {
@@ -362,11 +355,9 @@ async function compileTailwind(force = false, inputPath?: string): Promise<strin
   cachedCss = { code, path: inputPath, timestamp: Date.now() };
   return code;
 }
+// #endregion 3. Tailwind CSS Compiler & Caching
 
-// ============================================================================
-// 4. Entrypoint Discovery
-// ============================================================================
-
+// #region 4. Entrypoint Discovery
 export async function getAppEntrypoint(htmlSource?: string): Promise<EntrypointInfo> {
   const html =
     htmlSource ?? (await bunFile(join(CONFIG.root, 'index.html')).text().catch(() => ''));
@@ -406,11 +397,9 @@ export async function getStyleEntrypoint(htmlSource?: string): Promise<Entrypoin
   const fallback = join(CONFIG.srcDir, 'style.css');
   return { file: 'style.css', path: fallback, rel: '/src/style.css' };
 }
+// #endregion 4. Entrypoint Discovery
 
-// ============================================================================
-// 5. Build Error Formatting & Diagnostics
-// ============================================================================
-
+// #region 5. Build Error Formatting & Diagnostics
 export function formatBuildError(err: unknown): string {
   const e = err as BuildErrorLike;
   if (Array.isArray(e?.errors) && e.errors.length > 0) {
@@ -429,11 +418,9 @@ export function formatBuildError(err: unknown): string {
   }
   return err instanceof Error ? err.message : String(err);
 }
+// #endregion 5. Build Error Formatting & Diagnostics
 
-// ============================================================================
-// 6. Environment Variables & HTML Transforms
-// ============================================================================
-
+// #region 6. Environment Variables & HTML Transforms
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -483,11 +470,9 @@ async function renderDevHtml(enableLiveReload: boolean): Promise<string> {
   }
   return html;
 }
+// #endregion 6. Environment Variables & HTML Transforms
 
-// ============================================================================
-// 7. HTTP Dev Responses, CORS & Static Asset Caching
-// ============================================================================
-
+// #region 7. HTTP Dev Responses, CORS & Static Asset Caching
 export function devResponse(
   req: Request,
   content: string | Uint8Array | ArrayBuffer,
@@ -577,11 +562,9 @@ export function startServerWithFallback(
     `Could not find an available port after ${maxAttempts} attempts starting from ${initialPort}`,
   );
 }
+// #endregion 7. HTTP Dev Responses, CORS & Static Asset Caching
 
-// ============================================================================
-// 8. TypeScript & JavaScript Compilation
-// ============================================================================
-
+// #region 8. TypeScript & JavaScript Compilation
 async function compileTypeScript(
   filePath: string,
   force = false,
@@ -626,11 +609,9 @@ function invalidateAssetCache(file?: string) {
     cachedJs.clear();
   }
 }
+// #endregion 8. TypeScript & JavaScript Compilation
 
-// ============================================================================
-// 9. Dev Server, File Watcher & Proxy Engine
-// ============================================================================
-
+// #region 9. Dev Server, File Watcher & Proxy Engine
 export function createDevServer(
   port = CONFIG.devPort,
   enableLiveReload = true,
@@ -863,11 +844,9 @@ export function createDevServer(
     },
   });
 }
+// #endregion 9. Dev Server, File Watcher & Proxy Engine
 
-// ============================================================================
-// 10. Production Bundler & Build Pipeline
-// ============================================================================
-
+// #region 10. Production Bundler & Build Pipeline
 export async function buildProduction(
   options: BuildOptions = {},
 ): Promise<BuildProductionResult> {
@@ -1028,11 +1007,9 @@ export async function getBuildSummary(
     .filter((item): item is { path: string; size: number; gzip: number } => item !== null)
     .sort((a, b) => b.size - a.size);
 }
+// #endregion 10. Production Bundler & Build Pipeline
 
-// ============================================================================
-// 11. Production Preview Server
-// ============================================================================
-
+// #region 11. Production Preview Server
 function isCompressible(filePath: string): boolean {
   const dotIndex = filePath.lastIndexOf('.');
   if (dotIndex === -1) return false;
@@ -1083,11 +1060,9 @@ export function previewProduction(port = CONFIG.previewPort): Server<unknown> {
   console.log(`🔍 Serving production build at http://localhost:${server.port}`);
   return server;
 }
+// #endregion 11. Production Preview Server
 
-// ============================================================================
-// 12. Network Utilities & CLI Runner
-// ============================================================================
-
+// #region 12. Network Utilities & CLI Runner
 export function openBrowser(url: string) {
   const osCmd =
     process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer' : 'xdg-open';
@@ -1135,3 +1110,4 @@ if (import.meta.main) {
     console.log(`Unknown command: "${cmd}". Usage: bun vite.ts [dev|build|preview] [--open]`);
   }
 }
+// #endregion 12. Network Utilities & CLI Runner
