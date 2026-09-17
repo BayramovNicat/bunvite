@@ -30,8 +30,8 @@ describe('todo app', () => {
       };
     })()`)) as { title: string; header: string; itemsCount: number; emptyText: string };
 
-    expect(state.title).toBe('Tasks');
-    expect(state.header).toBe('Tasks');
+    expect(state.title).toBe('BunVite');
+    expect(state.header).toBe('BunVite');
     expect(state.itemsCount).toBe(0);
     expect(state.emptyText).toBe('No tasks');
   });

@@ -52,6 +52,7 @@ const TodoItem = (t: Todo) => /*html*/ `
   </li>
 `;
 
+const appTitle = import.meta.env.VITE_APP_TITLE || 'BunVite';
 const root = document.querySelector('#app') as HTMLElement;
 
 root.className = 'size-full flex flex-col items-center justify-center p-4 sm:p-6';
@@ -59,7 +60,7 @@ root.innerHTML = /*html*/ `
   <div class="w-full max-w-lg bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
     <header class="flex items-center justify-between px-6 pt-6 pb-4 border-b border-zinc-800">
       <div class="flex items-center gap-2">
-        <h1 class="text-lg font-semibold text-zinc-100 tracking-tight">Tasks</h1>
+        <h1 class="text-lg font-semibold text-zinc-100 tracking-tight">${escapeHtml(appTitle)}</h1>
         <span class="badge text-xs font-medium px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400">0</span>
       </div>
     </header>

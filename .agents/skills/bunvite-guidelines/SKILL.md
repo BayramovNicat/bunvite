@@ -111,17 +111,17 @@ VS Code CSS validation warnings on `source(none)` are suppressed via `css.valida
 
 1. Add the key to `.env` and `.env.example`:
    ```bash
-   VITE_APP_NAME=My App
+   VITE_APP_TITLE=My App
    ```
-2. Declare the type in `types/env.d.ts`:
+2. Declare the type in `types/vite.d.ts`:
    ```typescript
    declare interface ImportMetaEnv {
-     readonly VITE_APP_NAME: string;
+     readonly VITE_APP_TITLE: string;
    }
    ```
 3. Read in application code:
    ```typescript
-   const title = import.meta.env.VITE_APP_NAME;
+   const title = import.meta.env.VITE_APP_TITLE;
    ```
 
 ---

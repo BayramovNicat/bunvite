@@ -5,6 +5,8 @@ import { basename, join } from 'node:path';
 import { file as bunFile, type Server, type ServerWebSocket, serve } from 'bun';
 
 // #region 1. Configuration & Types
+process.env.VITE_APP_TITLE ??= 'BunVite';
+
 export const CONFIG = {
   root: import.meta.dir,
   srcDir: join(import.meta.dir, 'src'),
