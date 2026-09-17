@@ -4,6 +4,10 @@ import { networkInterfaces } from 'node:os';
 import { basename, join } from 'node:path';
 import { file as bunFile, type Server, type ServerWebSocket, serve } from 'bun';
 
+// ============================================================================
+// 1. Types & Configuration
+// ============================================================================
+
 export type ProxyTarget =
   | string
   | {
@@ -13,6 +17,48 @@ export type ProxyTarget =
     };
 
 export type ProxyConfig = Record<string, ProxyTarget>;
+
+export interface EntrypointInfo {
+  file: string;
+  path: string;
+  rel: string;
+}
+
+export interface BuildStageTimings {
+  setup: number;
+  js: number;
+  css: number;
+  html: number;
+  summary: number;
+}
+
+export interface BuildProductionResult {
+  elapsed: number;
+  stages: BuildStageTimings;
+  summary: Array<{ path: string; size: number; gzip: number }>;
+}
+
+export interface BuildOptions {
+  silent?: boolean;
+}
+
+interface BuildErrorLike {
+  errors?: Array<{
+    message?: string;
+    position?: {
+      file?: string;
+      line?: number;
+      column?: number;
+      lineText?: string;
+    };
+  }>;
+}
+
+interface StaticCacheEntry {
+  bytes: Uint8Array;
+  etag: string;
+  type: string;
+}
 
 export const CONFIG = {
   root: import.meta.dir,
@@ -26,6 +72,28 @@ export const CONFIG = {
     ? { '/api': process.env.VITE_PROXY_TARGET }
     : {}) as ProxyConfig,
 };
+
+const TAILWIND_CACHE_DIR = join(CONFIG.root, '.cache', 'tailwind');
+
+const COMPRESSIBLE_EXTENSIONS = new Set([
+  '.html',
+  '.js',
+  '.css',
+  '.json',
+  '.svg',
+  '.txt',
+  '.xml',
+  '.map',
+]);
+
+// In-memory compiler & asset caches
+let cachedCss: { code: string; path?: string; timestamp: number } | null = null;
+const cachedJs = new Map<string, { code: string; timestamp: number }>();
+const staticAssetCache = new Map<string, StaticCacheEntry>();
+
+// ============================================================================
+// 2. HMR Client Runtime & Error Overlay
+// ============================================================================
 
 const HMR_CLIENT_SCRIPT = /*html*/ `
 <script>
@@ -174,9 +242,9 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
 </script>
 `;
 
-let cachedCss: { code: string; path?: string; timestamp: number } | null = null;
-const cachedJs = new Map<string, { code: string; timestamp: number }>();
-const TAILWIND_CACHE_DIR = join(CONFIG.root, '.cache', 'tailwind');
+// ============================================================================
+// 3. Tailwind CSS Compiler & Caching
+// ============================================================================
 
 export function getTailwindCommand(args: string[]): string[] {
   const globalBin = Bun.which('tailwindcss');
@@ -195,61 +263,24 @@ export function hasTailwindImport(cssText: string): boolean {
   return /@import\s+['"]tailwindcss/i.test(clean);
 }
 
-export interface EntrypointInfo {
-  file: string;
-  path: string;
-  rel: string;
-}
-
-export async function getAppEntrypoint(htmlSource?: string): Promise<EntrypointInfo> {
-  const html = htmlSource ?? (await bunFile(join(CONFIG.root, 'index.html')).text().catch(() => ''));
-  const match = html.match(/<script\b[^>]*?\bsrc=["']([^"']+\.(?:[tj]sx?|mjs))["'][^>]*>/i);
-  if (match) {
-    const rawSrc = match[1];
-    const cleanPath = rawSrc.replace(/^[./]+/, '');
-    const absPath = join(CONFIG.root, cleanPath);
-    return {
-      file: basename(cleanPath),
-      path: absPath,
-      rel: rawSrc.startsWith('/') ? rawSrc : `/${cleanPath}`,
-    };
-  }
-
-  const fallback = join(CONFIG.srcDir, 'app.ts');
-  return { file: 'app.ts', path: fallback, rel: '/src/app.ts' };
-}
-
-export async function getStyleEntrypoint(htmlSource?: string): Promise<EntrypointInfo> {
-  const html = htmlSource ?? (await bunFile(join(CONFIG.root, 'index.html')).text().catch(() => ''));
-  const linkMatches = html.matchAll(/<link\b[^>]*?\bhref=["']([^"']+\.css)["'][^>]*>/gi);
-  for (const m of linkMatches) {
-    if (/rel=["']stylesheet["']/i.test(m[0])) {
-      const rawHref = m[1];
-      const cleanPath = rawHref.replace(/^[./]+/, '');
-      const absPath = join(CONFIG.root, cleanPath);
-      return {
-        file: basename(cleanPath),
-        path: absPath,
-        rel: rawHref.startsWith('/') ? rawHref : `/${cleanPath}`,
-      };
-    }
-  }
-
-  const fallback = join(CONFIG.srcDir, 'style.css');
-  return { file: 'style.css', path: fallback, rel: '/src/style.css' };
-}
-
-async function getTailwindCacheKey(cssText: string): Promise<string> {
-  const html = await bunFile(join(CONFIG.root, 'index.html')).text().catch(() => '');
-  const entry = await getAppEntrypoint();
+async function getTailwindCacheKey(cssText: string, htmlSource?: string): Promise<string> {
+  const html =
+    htmlSource ?? (await bunFile(join(CONFIG.root, 'index.html')).text().catch(() => ''));
+  const entry = await getAppEntrypoint(html);
   const appCode = await bunFile(entry.path).text().catch(() => '');
   return Bun.hash(`${cssText}:${html}:${appCode}`).toString(36);
 }
 
 export async function compileTailwindCss(
-  options: { inputPath?: string; minify?: boolean; outputPath?: string; silent?: boolean } = {},
+  options: {
+    inputPath?: string;
+    minify?: boolean;
+    outputPath?: string;
+    silent?: boolean;
+    htmlSource?: string;
+  } = {},
 ): Promise<string> {
-  const styleEntry = await getStyleEntrypoint();
+  const styleEntry = await getStyleEntrypoint(options.htmlSource);
   const inputPath = options.inputPath ?? styleEntry.path;
   const cssFile = bunFile(inputPath);
   if (!(await cssFile.exists())) {
@@ -276,7 +307,7 @@ export async function compileTailwindCss(
     return output;
   }
 
-  const cacheKey = await getTailwindCacheKey(cssText);
+  const cacheKey = await getTailwindCacheKey(cssText, options.htmlSource);
   const cachePath = join(TAILWIND_CACHE_DIR, `${cacheKey}.${options.minify ? 'min' : 'raw'}.css`);
   const diskCache = bunFile(cachePath);
 
@@ -332,17 +363,53 @@ async function compileTailwind(force = false, inputPath?: string): Promise<strin
   return code;
 }
 
-interface BuildErrorLike {
-  errors?: Array<{
-    message?: string;
-    position?: {
-      file?: string;
-      line?: number;
-      column?: number;
-      lineText?: string;
+// ============================================================================
+// 4. Entrypoint Discovery
+// ============================================================================
+
+export async function getAppEntrypoint(htmlSource?: string): Promise<EntrypointInfo> {
+  const html =
+    htmlSource ?? (await bunFile(join(CONFIG.root, 'index.html')).text().catch(() => ''));
+  const match = html.match(/<script\b[^>]*?\bsrc=["']([^"']+\.(?:[tj]sx?|mjs))["'][^>]*>/i);
+  if (match) {
+    const rawSrc = match[1];
+    const cleanPath = rawSrc.replace(/^[./]+/, '');
+    const absPath = join(CONFIG.root, cleanPath);
+    return {
+      file: basename(cleanPath),
+      path: absPath,
+      rel: rawSrc.startsWith('/') ? rawSrc : `/${cleanPath}`,
     };
-  }>;
+  }
+
+  const fallback = join(CONFIG.srcDir, 'app.ts');
+  return { file: 'app.ts', path: fallback, rel: '/src/app.ts' };
 }
+
+export async function getStyleEntrypoint(htmlSource?: string): Promise<EntrypointInfo> {
+  const html =
+    htmlSource ?? (await bunFile(join(CONFIG.root, 'index.html')).text().catch(() => ''));
+  const linkMatches = html.matchAll(/<link\b[^>]*?\bhref=["']([^"']+\.css)["'][^>]*>/gi);
+  for (const m of linkMatches) {
+    if (/rel=["']stylesheet["']/i.test(m[0])) {
+      const rawHref = m[1];
+      const cleanPath = rawHref.replace(/^[./]+/, '');
+      const absPath = join(CONFIG.root, cleanPath);
+      return {
+        file: basename(cleanPath),
+        path: absPath,
+        rel: rawHref.startsWith('/') ? rawHref : `/${cleanPath}`,
+      };
+    }
+  }
+
+  const fallback = join(CONFIG.srcDir, 'style.css');
+  return { file: 'style.css', path: fallback, rel: '/src/style.css' };
+}
+
+// ============================================================================
+// 5. Build Error Formatting & Diagnostics
+// ============================================================================
 
 export function formatBuildError(err: unknown): string {
   const e = err as BuildErrorLike;
@@ -361,6 +428,14 @@ export function formatBuildError(err: unknown): string {
       .join('\n\n---\n\n');
   }
   return err instanceof Error ? err.message : String(err);
+}
+
+// ============================================================================
+// 6. Environment Variables & HTML Transforms
+// ============================================================================
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 export function getClientEnv(mode: 'development' | 'production'): Record<string, string> {
@@ -409,6 +484,10 @@ async function renderDevHtml(enableLiveReload: boolean): Promise<string> {
   return html;
 }
 
+// ============================================================================
+// 7. HTTP Dev Responses, CORS & Static Asset Caching
+// ============================================================================
+
 export function devResponse(
   req: Request,
   content: string | Uint8Array | ArrayBuffer,
@@ -434,6 +513,74 @@ export function devResponse(
     },
   });
 }
+
+async function serveStaticFile(req: Request, absPath: string): Promise<Response | null> {
+  const file = bunFile(absPath);
+  if (!(await file.exists())) return null;
+
+  const stat = await file.stat();
+  if (!stat.isFile()) return null;
+
+  const cached = staticAssetCache.get(absPath);
+  if (cached) {
+    const ifNoneMatch = req.headers.get('if-none-match');
+    if (ifNoneMatch === cached.etag) {
+      return new Response(null, {
+        status: 304,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-cache',
+          ETag: cached.etag,
+        },
+      });
+    }
+    return new Response(cached.bytes as BodyInit, {
+      headers: {
+        'Content-Type': cached.type,
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-cache',
+        ETag: cached.etag,
+      },
+    });
+  }
+
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const etag = `"${Bun.hash(bytes).toString(16)}"`;
+  const type = file.type || 'application/octet-stream';
+  staticAssetCache.set(absPath, { bytes, etag, type });
+  return devResponse(req, bytes, type);
+}
+
+export function startServerWithFallback(
+  options: Parameters<typeof serve>[0],
+  maxAttempts = 10,
+): Server<unknown> {
+  const initialPort =
+    typeof options.port === 'string' ? Number.parseInt(options.port, 10) : (options.port ?? 0);
+  if (initialPort === 0) return serve(options);
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const targetPort = initialPort + attempt;
+    try {
+      return serve({ ...options, port: targetPort } as Parameters<typeof serve>[0]);
+    } catch (err: unknown) {
+      const isPortInUse =
+        err instanceof Error &&
+        (('code' in err && (err as { code: string }).code === 'EADDRINUSE') ||
+          err.message.includes('in use'));
+      if (!isPortInUse || attempt === maxAttempts - 1) {
+        throw err;
+      }
+    }
+  }
+  throw new Error(
+    `Could not find an available port after ${maxAttempts} attempts starting from ${initialPort}`,
+  );
+}
+
+// ============================================================================
+// 8. TypeScript & JavaScript Compilation
+// ============================================================================
 
 async function compileTypeScript(
   filePath: string,
@@ -474,37 +621,15 @@ async function compileTypeScript(
 
 function invalidateAssetCache(file?: string) {
   cachedCss = null;
+  staticAssetCache.clear();
   if (!file || file.endsWith('.ts') || file.endsWith('.js')) {
     cachedJs.clear();
   }
 }
 
-export function startServerWithFallback(
-  options: Parameters<typeof serve>[0],
-  maxAttempts = 10,
-): Server<unknown> {
-  const initialPort =
-    typeof options.port === 'string' ? Number.parseInt(options.port, 10) : (options.port ?? 0);
-  if (initialPort === 0) return serve(options);
-
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const targetPort = initialPort + attempt;
-    try {
-      return serve({ ...options, port: targetPort } as Parameters<typeof serve>[0]);
-    } catch (err: unknown) {
-      const isPortInUse =
-        err instanceof Error &&
-        (('code' in err && (err as { code: string }).code === 'EADDRINUSE') ||
-          err.message.includes('in use'));
-      if (!isPortInUse || attempt === maxAttempts - 1) {
-        throw err;
-      }
-    }
-  }
-  throw new Error(
-    `Could not find an available port after ${maxAttempts} attempts starting from ${initialPort}`,
-  );
-}
+// ============================================================================
+// 9. Dev Server, File Watcher & Proxy Engine
+// ============================================================================
 
 export function createDevServer(
   port = CONFIG.devPort,
@@ -514,6 +639,17 @@ export function createDevServer(
   const activeSockets = new Set<ServerWebSocket<unknown>>();
 
   compileTailwind();
+
+  const proxyEntries = Object.entries(proxy).map(([prefix, config]) => {
+    const isObj = typeof config === 'object';
+    return {
+      prefix,
+      target: isObj ? config.target : config,
+      changeOrigin: isObj ? Boolean(config.changeOrigin) : false,
+      rewrite: isObj && config.rewrite ? config.rewrite : undefined,
+    };
+  });
+  const hasProxy = proxyEntries.length > 0;
 
   if (enableLiveReload) {
     let debounceTimer: Timer | null = null;
@@ -629,36 +765,38 @@ export function createDevServer(
         });
       }
 
-      for (const [prefix, config] of Object.entries(proxy)) {
-        if (pathname.startsWith(prefix)) {
-          const target = typeof config === 'string' ? config : config.target;
-          const rewrittenPath =
-            typeof config === 'object' && config.rewrite ? config.rewrite(pathname) : pathname;
+      if (hasProxy) {
+        for (const entry of proxyEntries) {
+          if (pathname.startsWith(entry.prefix)) {
+            const rewrittenPath = entry.rewrite ? entry.rewrite(pathname) : pathname;
+            const targetUrl = new URL(rewrittenPath + url.search, entry.target);
+            const headers = new Headers(req.headers);
 
-          const targetUrl = new URL(rewrittenPath + url.search, target);
-          const headers = new Headers(req.headers);
+            if (entry.changeOrigin) {
+              headers.set('host', targetUrl.host);
+            }
 
-          if (typeof config === 'object' && config.changeOrigin) {
-            headers.set('host', targetUrl.host);
-          }
-
-          try {
-            return await fetch(targetUrl.toString(), {
-              method: req.method,
-              headers,
-              body: req.body,
-              // @ts-expect-error Bun supports duplex streaming
-              duplex: 'half',
-            });
-          } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : String(err);
-            return new Response(`Bad Gateway: Proxy error connecting to ${target}\n${msg}`, {
-              status: 502,
-              headers: {
-                'Content-Type': 'text/plain; charset=utf-8',
-                'Access-Control-Allow-Origin': '*',
-              },
-            });
+            try {
+              return await fetch(targetUrl.toString(), {
+                method: req.method,
+                headers,
+                body: req.body,
+                // @ts-expect-error Bun supports duplex streaming
+                duplex: 'half',
+              });
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : String(err);
+              return new Response(
+                `Bad Gateway: Proxy error connecting to ${entry.target}\n${msg}`,
+                {
+                  status: 502,
+                  headers: {
+                    'Content-Type': 'text/plain; charset=utf-8',
+                    'Access-Control-Allow-Origin': '*',
+                  },
+                },
+              );
+            }
           }
         }
       }
@@ -673,8 +811,10 @@ export function createDevServer(
         return devResponse(req, html, 'text/html; charset=utf-8');
       }
 
+      const cleanPath = pathname.startsWith('/') ? pathname.slice(1) : pathname;
+
       if (pathname.endsWith('.css')) {
-        const filePath = join(CONFIG.root, pathname.replace(/^\//, ''));
+        const filePath = join(CONFIG.root, cleanPath);
         const css = await compileTailwind(false, filePath);
         return devResponse(req, css, 'text/css; charset=utf-8');
       }
@@ -685,7 +825,7 @@ export function createDevServer(
         pathname.endsWith('.tsx') ||
         pathname.endsWith('.jsx')
       ) {
-        const filePath = join(CONFIG.root, pathname.replace(/^\//, ''));
+        const filePath = join(CONFIG.root, cleanPath);
         const result = await compileTypeScript(filePath);
 
         if ('error' in result) {
@@ -703,17 +843,13 @@ export function createDevServer(
         return devResponse(req, result.code, 'application/javascript; charset=utf-8');
       }
 
-      const publicFile = bunFile(join(CONFIG.publicDir, pathname.replace(/^\//, '')));
-      if (await publicFile.exists()) {
-        const bytes = await publicFile.arrayBuffer();
-        return devResponse(req, bytes, publicFile.type || 'application/octet-stream');
-      }
+      const publicPath = join(CONFIG.publicDir, cleanPath);
+      const publicResponse = await serveStaticFile(req, publicPath);
+      if (publicResponse) return publicResponse;
 
-      const staticFile = bunFile(join(CONFIG.root, pathname.replace(/^\//, '')));
-      if (await staticFile.exists()) {
-        const bytes = await staticFile.arrayBuffer();
-        return devResponse(req, bytes, staticFile.type || 'application/octet-stream');
-      }
+      const rootPath = join(CONFIG.root, cleanPath);
+      const rootResponse = await serveStaticFile(req, rootPath);
+      if (rootResponse) return rootResponse;
 
       if (req.headers.get('accept')?.includes('text/html')) {
         const html = await renderDevHtml(enableLiveReload);
@@ -728,23 +864,9 @@ export function createDevServer(
   });
 }
 
-export interface BuildStageTimings {
-  setup: number;
-  js: number;
-  css: number;
-  html: number;
-  summary: number;
-}
-
-export interface BuildProductionResult {
-  elapsed: number;
-  stages: BuildStageTimings;
-  summary: Array<{ path: string; size: number; gzip: number }>;
-}
-
-export interface BuildOptions {
-  silent?: boolean;
-}
+// ============================================================================
+// 10. Production Bundler & Build Pipeline
+// ============================================================================
 
 export async function buildProduction(
   options: BuildOptions = {},
@@ -759,11 +881,17 @@ export async function buildProduction(
   const t0 = performance.now();
   await rm(CONFIG.distDir, { recursive: true, force: true });
   await mkdir(assetsDir, { recursive: true });
-  await cp(CONFIG.publicDir, CONFIG.distDir, { recursive: true }).catch(() => {});
+
+  const rawHtmlPromise = bunFile(join(CONFIG.root, 'index.html')).text();
+  const publicCopyPromise = cp(CONFIG.publicDir, CONFIG.distDir, { recursive: true }).catch(
+    () => {},
+  );
+
+  const [rawHtml] = await Promise.all([rawHtmlPromise, publicCopyPromise]);
   const t1 = performance.now();
 
-  const jsEntry = await getAppEntrypoint();
-  const styleEntry = await getStyleEntrypoint();
+  const jsEntry = await getAppEntrypoint(rawHtml);
+  const styleEntry = await getStyleEntrypoint(rawHtml);
   const cssBasename = styleEntry.file.replace(/\.css$/, '');
   const cssFile = `${cssBasename}.${Date.now().toString(36)}.css`;
   const cssPath = join(assetsDir, cssFile);
@@ -792,6 +920,7 @@ export async function buildProduction(
       minify: true,
       outputPath: cssPath,
       silent,
+      htmlSource: rawHtml,
     });
     tCssEnd = performance.now();
   })();
@@ -806,29 +935,30 @@ export async function buildProduction(
   const jsFile = basename(jsBuild.outputs[0].path);
   const t3 = performance.now();
 
-  let html = await bunFile(join(CONFIG.root, 'index.html')).text();
-  html = replaceEnvInHtml(html);
+  let html = replaceEnvInHtml(rawHtml);
   const basePrefix = CONFIG.base === '/' ? '/' : CONFIG.base;
 
+  const escapedRel = escapeRegExp(styleEntry.rel);
   const styleRegex = new RegExp(
-    `<link\\s+[^>]*?href=["'](?:${styleEntry.rel.replace('/', '\\/')}|\\.?${styleEntry.rel.replace('/', '\\/')})["'][^>]*\\/?>`,
+    `<link\\s+[^>]*?href=["'](?:${escapedRel}|\\.?${escapedRel})["'][^>]*\\/?>`,
     'i',
   );
-  if (styleRegex.test(html)) {
-    html = html.replace(styleRegex, `<style>${cssContent}</style>`);
-  } else {
-    html = html.replace(
-      /<link\s+rel=["']stylesheet["']\s+href=["'][^"']+\.css["']\s*\/?>/i,
-      `<style>${cssContent}</style>`,
-    );
-  }
+  const replacedStyle = html.replace(styleRegex, `<style>${cssContent}</style>`);
+  html =
+    replacedStyle !== html
+      ? replacedStyle
+      : html.replace(
+          /<link\s+rel=["']stylesheet["']\s+href=["'][^"']+\.css["']\s*\/?>/i,
+          `<style>${cssContent}</style>`,
+        );
 
-  const scriptRegex = new RegExp(jsEntry.rel.replace('/', '\\/'), 'g');
-  if (scriptRegex.test(html)) {
-    html = html.replace(scriptRegex, `${basePrefix}assets/${jsFile}`);
-  } else {
-    html = html.replace(/\/src\/[a-zA-Z0-9_.-]+\.(?:[tj]sx?|mjs)/, `${basePrefix}assets/${jsFile}`);
-  }
+  const scriptPattern = escapeRegExp(jsEntry.rel);
+  const scriptRegex = new RegExp(scriptPattern, 'g');
+  const replacedScript = html.replace(scriptRegex, `${basePrefix}assets/${jsFile}`);
+  html =
+    replacedScript !== html
+      ? replacedScript
+      : html.replace(/\/src\/[a-zA-Z0-9_.-]+\.(?:[tj]sx?|mjs)/, `${basePrefix}assets/${jsFile}`);
 
   html = html.replace(
     '</head>',
@@ -899,24 +1029,9 @@ export async function getBuildSummary(
     .sort((a, b) => b.size - a.size);
 }
 
-export function openBrowser(url: string) {
-  const osCmd =
-    process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer' : 'xdg-open';
-  try {
-    Bun.spawn([osCmd, url]).unref();
-  } catch (_) {}
-}
-
-const COMPRESSIBLE_EXTENSIONS = new Set([
-  '.html',
-  '.js',
-  '.css',
-  '.json',
-  '.svg',
-  '.txt',
-  '.xml',
-  '.map',
-]);
+// ============================================================================
+// 11. Production Preview Server
+// ============================================================================
 
 function isCompressible(filePath: string): boolean {
   const dotIndex = filePath.lastIndexOf('.');
@@ -969,7 +1084,17 @@ export function previewProduction(port = CONFIG.previewPort): Server<unknown> {
   return server;
 }
 
-const cmd = process.argv[2] || 'dev';
+// ============================================================================
+// 12. Network Utilities & CLI Runner
+// ============================================================================
+
+export function openBrowser(url: string) {
+  const osCmd =
+    process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer' : 'xdg-open';
+  try {
+    Bun.spawn([osCmd, url]).unref();
+  } catch (_) {}
+}
 
 export function getNetworkUrl(port: number): string | null {
   for (const addrs of Object.values(networkInterfaces())) {
@@ -978,6 +1103,8 @@ export function getNetworkUrl(port: number): string | null {
   }
   return null;
 }
+
+const cmd = process.argv[2] || 'dev';
 
 if (import.meta.main) {
   const isOpen = process.argv.includes('--open') || process.argv.includes('-o');
