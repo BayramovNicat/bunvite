@@ -860,12 +860,12 @@ describe('scss and sass support', () => {
 
   test('production build compiles and inlines SCSS entrypoint', async () => {
     const origHtml = await bunFile(join(CONFIG.root, 'index.html')).text();
-    const scssPath = join(CONFIG.srcDir, 'style.scss');
+    const scssPath = join(CONFIG.srcDir, 'custom-test-theme.scss');
     await Bun.write(
       scssPath,
       '$brand: #8b5cf6;\n.brand-card {\n  background: $brand;\n  span {\n    color: #fff;\n  }\n}',
     );
-    const testHtml = origHtml.replace('/src/style.css', '/src/style.scss');
+    const testHtml = origHtml.replace(/\/src\/style\.(?:css|scss)/, '/src/custom-test-theme.scss');
     await Bun.write(join(CONFIG.root, 'index.html'), testHtml);
 
     try {

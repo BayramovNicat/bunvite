@@ -272,10 +272,6 @@ export function getTailwindCommand(args: string[]): string[] {
 }
 
 export function getSassCommand(args: string[]): string[] {
-  const globalBin = Bun.which('sass');
-  if (globalBin) {
-    return [globalBin, ...args];
-  }
   const localCli = join(CONFIG.root, 'node_modules', 'sass', 'sass.js');
   if (existsSync(localCli)) {
     return ['bun', localCli, ...args];
@@ -283,6 +279,10 @@ export function getSassCommand(args: string[]): string[] {
   const localBin = join(CONFIG.root, 'node_modules', '.bin', 'sass');
   if (existsSync(localBin)) {
     return [localBin, ...args];
+  }
+  const globalBin = Bun.which('sass');
+  if (globalBin) {
+    return [globalBin, ...args];
   }
   return ['bun', 'x', 'sass', ...args];
 }
@@ -338,14 +338,13 @@ export async function compileSass(
     return { code: cached };
   }
 
-  const shimFile = join(SASS_SHIM_DIR, '_tailwindcss.scss');
-  if (!existsSync(shimFile)) {
-    await mkdir(SASS_SHIM_DIR, { recursive: true });
-    await Bun.write(shimFile, '@import "tailwindcss";');
-  }
+  const TW_MARKER = '/*! __BUNVITE_TW_IMPORT__ */';
+  const hasTw = hasTailwindImport(sourceText);
+  const sassInput = hasTw
+    ? sourceText.replace(/@import\s*['"]tailwindcss['"][^;]*;?/gi, TW_MARKER)
+    : sourceText;
 
   const defaultLoadPaths = [
-    SASS_SHIM_DIR,
     CONFIG.root,
     CONFIG.srcDir,
     join(CONFIG.root, 'node_modules'),
@@ -370,7 +369,7 @@ export async function compileSass(
   }
 
   let code = '';
-  if (inputPath && existsSync(inputPath)) {
+  if (!hasTw && inputPath && existsSync(inputPath)) {
     const cmd = getSassCommand([...args, inputPath]);
     const proc = Bun.spawn(cmd, {
       cwd: CONFIG.root,
@@ -390,7 +389,7 @@ export async function compileSass(
   } else {
     await mkdir(SASS_CACHE_DIR, { recursive: true });
     const tempInput = join(SASS_CACHE_DIR, `temp-${cacheKey}.${isIndented ? 'sass' : 'scss'}`);
-    await Bun.write(tempInput, sourceText);
+    await Bun.write(tempInput, sassInput);
     try {
       const cmd = getSassCommand([...args, tempInput]);
       const proc = Bun.spawn(cmd, {
@@ -413,6 +412,10 @@ export async function compileSass(
     }
   }
 
+  if (hasTw) {
+    code = code.replace(TW_MARKER, '@import "tailwindcss";');
+  }
+
   if (options.outputPath) {
     await Bun.write(options.outputPath, code);
   }
@@ -425,7 +428,7 @@ export async function compileSass(
 
 export function hasTailwindImport(cssText: string): boolean {
   const clean = cssText.replace(/\/\*[\s\S]*?\*\//g, '');
-  return /@import\s+['"]tailwindcss/i.test(clean);
+  return /@import\s*['"]tailwindcss/i.test(clean);
 }
 
 async function getTailwindCacheKey(cssText: string, htmlSource?: string): Promise<string> {
@@ -496,18 +499,32 @@ export async function compileTailwindCss(
     twCmd.push('--silent');
   }
 
+  const twEnv = {
+    ...process.env,
+    NODE_PATH: [
+      join(CONFIG.root, 'node_modules'),
+      join(process.env.HOME || '', '.bun', 'install', 'global', 'node_modules'),
+      process.env.NODE_PATH,
+    ]
+      .filter(Boolean)
+      .join(':'),
+  };
+
   let code = '';
   if (options.outputPath) {
     const proc = Bun.spawn(twCmd, {
       cwd: CONFIG.root,
+      env: twEnv,
       stdout: options.silent ? 'ignore' : 'inherit',
       stderr: options.silent ? 'ignore' : 'inherit',
     });
     await proc.exited;
-    code = await bunFile(options.outputPath).text();
+    const f = bunFile(options.outputPath);
+    code = (await f.exists()) ? await f.text() : '';
   } else {
     const proc = Bun.spawn(twCmd, {
       cwd: CONFIG.root,
+      env: twEnv,
       stdout: 'pipe',
       stderr: 'pipe',
     });
@@ -545,7 +562,8 @@ export async function compileStylesheet(
     if (hasTailwindImport(sassRes.code)) {
       const tempPath = join(TAILWIND_CACHE_DIR, `sass-tw-${Bun.hash(sassRes.code).toString(36)}.css`);
       await mkdir(TAILWIND_CACHE_DIR, { recursive: true });
-      await Bun.write(tempPath, sassRes.code);
+      const twInput = `@source "${join(CONFIG.root, 'index.html')}";\n@source "${CONFIG.srcDir}";\n${sassRes.code}`;
+      await Bun.write(tempPath, twInput);
       try {
         const twCode = await compileTailwindCss({
           inputPath: tempPath,

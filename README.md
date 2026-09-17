@@ -1,6 +1,6 @@
 # BunVite Starter
 
-A minimal, zero-runtime-dependency frontend development engine and production bundler built on Bun, TypeScript, and Tailwind CSS v4.
+A minimal, zero-runtime-dependency frontend development engine and production bundler built on Bun, TypeScript, Tailwind CSS v4, and Sass/SCSS.
 
 Replaces standard npm Vite with a single self-contained script (`vite.ts`) utilizing native Bun APIs for development, hot module reloading, and production bundling.
 
@@ -9,6 +9,7 @@ Replaces standard npm Vite with a single self-contained script (`vite.ts`) utili
 ## Features
 
 - **Dev Server & HMR:** Module hot-reloading over WebSocket, in-memory TypeScript transforms, stylesheet hot-swapping, and active input focus preservation.
+- **SCSS & Sass Preprocessing:** Native compilation for `.scss` and `.sass` files via Dart Sass with disk caching, modular `@use`/`@import` load paths, and seamless Tailwind v4 chaining.
 - **Tailwind CSS v4:** Direct integration with `@tailwindcss/cli` via `Bun.spawn`, with in-memory caching and scoped source scanning.
 - **Error Overlay:** Terminal-style in-browser overlay displaying syntax errors with file paths, line/column positions, and codeframes.
 - **Environment Variables:** Automatic loading of `.env` files with `import.meta.env` exposure for `VITE_*` prefixes and `%VITE_*%` HTML substitution.
@@ -34,7 +35,8 @@ Replaces standard npm Vite with a single self-contained script (`vite.ts`) utili
 │   └── vite.test.ts       # Engine, proxy, and integration tests
 ├── types/
 │   ├── bun.d.ts           # Ambient Bun and test runner typings
-│   └── env.d.ts           # Type definitions for import.meta.env
+│   ├── env.d.ts           # Type definitions for import.meta.env
+│   └── styles.d.ts        # Module declarations for .scss, .sass, and .css
 ├── .editorconfig          # Indentation and formatting rules
 ├── .env.example           # Environment variable template
 ├── .prettierrc.json       # Prettier formatting config
@@ -53,14 +55,13 @@ Replaces standard npm Vite with a single self-contained script (`vite.ts`) utili
 ### Prerequisites
 
 - [Bun](https://bun.sh) (v1.2 or higher)
-- Optional (for fastest builds): Tailwind CSS v4 CLI installed globally:
+- Optional (for fastest builds): Styling CLIs installed globally:
   ```bash
-  bun add -g @tailwindcss/cli
-  # or: npm install -g @tailwindcss/cli
-  # or: pnpm add -g @tailwindcss/cli
-  # or: brew install tailwindcss
+  bun add -g @tailwindcss/cli sass
+  # or: npm install -g @tailwindcss/cli sass
+  # or: brew install tailwindcss sass/sass/sass/sass
   ```
-  *(If omitted, Bun automatically runs `@tailwindcss/cli` on-demand via `bunx` with zero repo overhead.)*
+  *(If omitted, Bun automatically runs `@tailwindcss/cli` and `sass` on-demand via `bunx` with zero repo overhead.)*
 
 ### Quickstart
 
@@ -120,6 +121,34 @@ Usage in [`index.html`](index.html):
 ```html
 <title>%VITE_APP_TITLE%</title>
 ```
+
+### SCSS & Sass Preprocessing
+
+BunVite provides native support for `.scss` and `.sass` stylesheets:
+
+- **HTML Stylesheets:** Link `.scss` or `.sass` directly in `index.html`:
+  ```html
+  <link rel="stylesheet" href="/src/style.scss" />
+  ```
+  *(Requesting `/src/style.css` will also transparently resolve to `src/style.scss` if `.css` is absent).*
+- **TypeScript & JavaScript Imports:** Import styles inside component files:
+  ```typescript
+  import './components/card.scss';
+  ```
+- **Tailwind v4 Integration:** Combine Tailwind utilities with Sass variables, mixins, and nesting:
+  ```scss
+  @import "tailwindcss";
+
+  $brand: #6366f1;
+
+  .card {
+    background: $brand;
+    &:hover {
+      background: darken($brand, 10%);
+    }
+  }
+  ```
+- **Speed & Caching:** Compiled styles are cached in `.cache/sass/` using 64-bit content hashes for sub-millisecond incremental rebuilds.
 
 ### API Dev Proxy
 
