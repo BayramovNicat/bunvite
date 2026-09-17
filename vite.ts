@@ -178,50 +178,10 @@ let cachedCss: { code: string; timestamp: number } | null = null;
 const cachedJs = new Map<string, { code: string; timestamp: number }>();
 const TAILWIND_CACHE_DIR = join(CONFIG.root, '.cache', 'tailwind');
 
-export async function ensureTailwindBinary(): Promise<string> {
-  const globalBin = Bun.which('tailwindcss');
-  if (globalBin) {
-    return globalBin;
-  }
-
-  const binaryName = process.platform === 'win32' ? 'tailwindcss.exe' : 'tailwindcss';
-  const localBin = join(CONFIG.root, '.bin', binaryName);
-  if (existsSync(localBin)) {
-    return localBin;
-  }
-
-  const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
-  let target = '';
-  if (process.platform === 'darwin') target = `tailwindcss-macos-${arch}`;
-  else if (process.platform === 'linux') target = `tailwindcss-linux-${arch}`;
-  else if (process.platform === 'win32') target = `tailwindcss-windows-${arch}.exe`;
-
-  if (target) {
-    try {
-      const url = `https://github.com/tailwindlabs/tailwindcss/releases/latest/download/${target}`;
-      const res = await fetch(url);
-      if (res.ok) {
-        await mkdir(join(CONFIG.root, '.bin'), { recursive: true });
-        await Bun.write(localBin, await res.arrayBuffer());
-        if (process.platform !== 'win32') {
-          await Bun.spawn(['chmod', '+x', localBin]).exited;
-        }
-        return localBin;
-      }
-    } catch {}
-  }
-  return '';
-}
-
 export function getTailwindCommand(args: string[]): string[] {
   const globalBin = Bun.which('tailwindcss');
   if (globalBin) {
     return [globalBin, ...args];
-  }
-  const binaryName = process.platform === 'win32' ? 'tailwindcss.exe' : 'tailwindcss';
-  const localBin = join(CONFIG.root, '.bin', binaryName);
-  if (existsSync(localBin)) {
-    return [localBin, ...args];
   }
   const localCli = join(CONFIG.root, 'node_modules', '@tailwindcss', 'cli', 'dist', 'index.mjs');
   if (existsSync(localCli)) {
@@ -254,7 +214,6 @@ export async function compileTailwindCss(
     return cached;
   }
 
-  await ensureTailwindBinary();
   const twCmd = getTailwindCommand([
     '-i',
     inputPath,

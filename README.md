@@ -53,27 +53,25 @@ Replaces standard npm Vite with a single self-contained script (`vite.ts`) utili
 ### Prerequisites
 
 - [Bun](https://bun.sh) (v1.2 or higher)
+- Optional (for fastest builds): Tailwind CSS v4 CLI installed globally:
+  ```bash
+  bun add -g @tailwindcss/cli
+  # or: npm install -g @tailwindcss/cli
+  # or: pnpm add -g @tailwindcss/cli
+  # or: brew install tailwindcss
+  ```
+  *(If omitted, Bun automatically runs `@tailwindcss/cli` on-demand via `bunx` with zero repo overhead.)*
 
 ### Quickstart
 
 ```bash
-# Scaffold a clean copy of the starter
+# 1. Scaffold a clean copy of the starter
 bunx degit BayramovNicat/bunvite my-new-app
 
-# Navigate and install dependencies (~100ms)
+# 2. Navigate into your project
 cd my-new-app
-bun install
 
-# Start development server
-bun run dev
-```
-
-Alternatively, clone via git:
-
-```bash
-git clone https://github.com/BayramovNicat/bunvite.git my-new-app
-cd my-new-app
-bun install
+# 3. Start development server immediately (zero install needed!)
 bun run dev
 ```
 

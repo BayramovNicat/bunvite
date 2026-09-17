@@ -9,6 +9,7 @@ import {
   getBuildSummary,
   getClientEnv,
   getNetworkUrl,
+  getTailwindCommand,
   previewProduction,
   replaceEnvInHtml,
   startServerWithFallback,
@@ -53,6 +54,16 @@ describe('dev server', () => {
     expect(res.headers.get('cache-control')).toContain('no-cache');
     const css = await res.text();
     expect(css.length).toBeGreaterThan(0);
+  });
+
+  test('resolves Tailwind command without root .bin directory', () => {
+    const cmd = getTailwindCommand(['-i', 'style.css']);
+    const globalTw = Bun.which('tailwindcss');
+    if (globalTw) {
+      expect(cmd[0]).toBe(globalTw);
+    } else {
+      expect(cmd).toEqual(['bun', 'x', '@tailwindcss/cli', '-i', 'style.css']);
+    }
   });
 
   test('compiles TypeScript with HMR state transform', async () => {
