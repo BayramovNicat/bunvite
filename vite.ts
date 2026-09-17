@@ -190,6 +190,11 @@ export function getTailwindCommand(args: string[]): string[] {
   return ['bun', 'x', '@tailwindcss/cli', ...args];
 }
 
+export function hasTailwindImport(cssText: string): boolean {
+  const clean = cssText.replace(/\/\*[\s\S]*?\*\//g, '');
+  return /@import\s+['"]tailwindcss/i.test(clean);
+}
+
 async function getTailwindCacheKey(cssText: string): Promise<string> {
   const html = await bunFile(join(CONFIG.root, 'index.html')).text().catch(() => '');
   const appTs = await bunFile(join(CONFIG.srcDir, 'app.ts')).text().catch(() => '');
@@ -197,10 +202,33 @@ async function getTailwindCacheKey(cssText: string): Promise<string> {
 }
 
 export async function compileTailwindCss(
-  options: { minify?: boolean; outputPath?: string; silent?: boolean } = {},
+  options: { inputPath?: string; minify?: boolean; outputPath?: string; silent?: boolean } = {},
 ): Promise<string> {
-  const inputPath = join(CONFIG.srcDir, 'style.css');
-  const cssText = await bunFile(inputPath).text();
+  const inputPath = options.inputPath ?? join(CONFIG.srcDir, 'style.css');
+  const cssFile = bunFile(inputPath);
+  if (!(await cssFile.exists())) {
+    if (options.outputPath) {
+      await Bun.write(options.outputPath, '');
+    }
+    return '';
+  }
+
+  const cssText = await cssFile.text();
+
+  if (!hasTailwindImport(cssText)) {
+    let output = cssText;
+    if (options.minify) {
+      output = output
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\s+/g, ' ')
+        .replace(/\s*([{}:;,])\s*/g, '$1')
+        .trim();
+    }
+    if (options.outputPath) {
+      await Bun.write(options.outputPath, output);
+    }
+    return output;
+  }
 
   const cacheKey = await getTailwindCacheKey(cssText);
   const cachePath = join(TAILWIND_CACHE_DIR, `${cacheKey}.${options.minify ? 'min' : 'raw'}.css`);
@@ -491,7 +519,11 @@ export function createDevServer(
                 file.startsWith('src/') && (file.endsWith('.ts') || file.endsWith('.js'));
               const isHtml = file.endsWith('.html');
 
-              if (isCss || isJsOrTs || isHtml) {
+              const styleFile = bunFile(join(CONFIG.srcDir, 'style.css'));
+              const usesTailwind =
+                (await styleFile.exists()) && hasTailwindImport(await styleFile.text());
+
+              if (isCss || (usesTailwind && (isJsOrTs || isHtml))) {
                 await compileTailwind(true);
                 socket.send(
                   JSON.stringify({

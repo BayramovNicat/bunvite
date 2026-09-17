@@ -9,7 +9,7 @@
     "preview": "bun run vite.ts preview",
     "test": "bun test test/todo.test.ts",
     "test:engine": "bun test test/engine/vite.test.ts test/engine/bench.test.ts",
-    "test:all": "bun test test/todo.test.ts test/engine/vite.test.ts test/engine/bench.test.ts --parallel",
+    "test:all": "bun test test/todo.test.ts test/engine/vite.test.ts test/engine/bench.test.ts",
     "lint": "bunx biome check .",
     "format": "bunx biome format --write .",
     "check:types": "bunx tsc --noEmit",

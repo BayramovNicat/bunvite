@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { file as bunFile, type Server } from 'bun';
 import {
   buildProduction,
+  compileTailwindCss,
   CONFIG,
   createDevServer,
   formatBuildError,
@@ -10,6 +11,7 @@ import {
   getClientEnv,
   getNetworkUrl,
   getTailwindCommand,
+  hasTailwindImport,
   previewProduction,
   replaceEnvInHtml,
   startServerWithFallback,
@@ -63,6 +65,29 @@ describe('dev server', () => {
       expect(cmd[0]).toBe(globalTw);
     } else {
       expect(cmd).toEqual(['bun', 'x', '@tailwindcss/cli', '-i', 'style.css']);
+    }
+  });
+
+  test('detects presence and absence of Tailwind imports correctly', () => {
+    expect(hasTailwindImport('@import "tailwindcss";')).toBe(true);
+    expect(hasTailwindImport('@import \'tailwindcss\' source(none);')).toBe(true);
+    expect(hasTailwindImport('@import "tailwindcss/utilities";')).toBe(true);
+    expect(hasTailwindImport('@tailwind base;')).toBe(false);
+    expect(hasTailwindImport('/* @import "tailwindcss"; */\nbody { color: red; }')).toBe(false);
+    expect(hasTailwindImport('body { color: red; margin: 0; }')).toBe(false);
+  });
+
+  test('skips Tailwind compilation when style file has no Tailwind import', async () => {
+    const tempCssPath = join(CONFIG.root, '.cache', 'plain-test.css');
+    await Bun.write(tempCssPath, '/* comment */\nbody {\n  color: red;\n  margin: 0;\n}\n');
+    try {
+      const output = await compileTailwindCss({
+        inputPath: tempCssPath,
+        minify: true,
+      });
+      expect(output).toBe('body{color:red;margin:0;}');
+    } finally {
+      await bunFile(tempCssPath).delete().catch(() => {});
     }
   });
 
