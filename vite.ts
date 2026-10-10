@@ -16,16 +16,7 @@ export const CONFIG = {
 
 const TAILWIND_CACHE_DIR = join(CONFIG.root, '.cache', 'tailwind');
 
-const IGNORED_WATCH_PREFIXES = [
-  'node_modules',
-  'dist',
-  'test',
-  '.git',
-  '.cache',
-  '.vscode',
-  '.DS_Store',
-  '.idea',
-];
+const IGNORED_WATCH_PREFIXES = ['node_modules', 'dist', 'test', '.git', '.cache'];
 
 const COMPRESSIBLE_EXTS = new Set([
   '.html',
@@ -63,12 +54,8 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     let ws;
     let overlay = null;
-    const hmrCallbacks = new Map();
-
     window.__hmr__ = {
-      onUpdate(path, fn) {
-        hmrCallbacks.set(path.replace(/^[./]+/, "/"), fn);
-      }
+      onUpdate() {}
     };
 
     const dismissOverlay = () => {
@@ -290,33 +277,13 @@ export async function compileTailwindCss(options: {
   return code;
 }
 
-export interface CompileStylesheetOptions {
-  inputPath?: string;
-  minify?: boolean;
-  outputPath?: string;
-  silent?: boolean;
-  htmlSource?: string;
-}
-
-export async function compileStylesheet(
-  options: CompileStylesheetOptions = {},
-): Promise<{ code: string; error?: string }> {
-  try {
-    const code = await compileTailwindCss(options);
-    return { code };
-  } catch (err: unknown) {
-    return { code: '', error: err instanceof Error ? err.message : String(err) };
-  }
-}
-
 async function compileTailwind(force = false, inputPath?: string): Promise<string> {
   if (!force && cachedCss && (!inputPath || cachedCss.path === inputPath)) {
     return cachedCss.code;
   }
-  const res = await compileStylesheet({ inputPath, minify: false, silent: true });
-  if (res.error) throw new Error(res.error);
-  cachedCss = { code: res.code, path: inputPath, timestamp: Date.now() };
-  return res.code;
+  const code = await compileTailwindCss({ inputPath, minify: false, silent: true });
+  cachedCss = { code, path: inputPath, timestamp: Date.now() };
+  return code;
 }
 
 export async function getAppEntrypoint(htmlSource?: string): Promise<EntrypointInfo> {
@@ -532,12 +499,7 @@ export function createDevServer(
             messages.push(JSON.stringify({ type: 'build-error', message: compileError }));
           } else {
             const isCss = file.endsWith('.css');
-            const isJsOrTs =
-              file.startsWith('src/') &&
-              (file.endsWith('.ts') ||
-                file.endsWith('.js') ||
-                file.endsWith('.tsx') ||
-                file.endsWith('.jsx'));
+            const isJsOrTs = file.startsWith('src/') && isScriptFile(file);
             const isHtml = file.endsWith('.html');
 
             const styleEntry = await getStyleEntrypoint();
@@ -635,17 +597,17 @@ export function createDevServer(
         }
       }
 
-      let scriptFilePath = isScriptFile(pathname) ? join(CONFIG.root, cleanPath) : null;
-      if (!scriptFilePath && pathname.startsWith('/src/')) {
-        scriptFilePath = resolveCandidate(join(CONFIG.root, cleanPath), ['.tsx', '.ts', '.jsx', '.js']);
+      let scriptFilePath: string | null = null;
+      if (pathname.startsWith('/src/')) {
+        const fullPath = join(CONFIG.root, cleanPath);
+        scriptFilePath = existsSync(fullPath)
+          ? fullPath
+          : resolveCandidate(fullPath.replace(/\.(?:[tj]sx?|mjs)$/, ''), ['.tsx', '.ts', '.jsx', '.js']);
+      } else if (isScriptFile(pathname)) {
+        scriptFilePath = join(CONFIG.root, cleanPath);
       }
 
       if (scriptFilePath) {
-        if (!existsSync(scriptFilePath)) {
-          const baseWithoutExt = scriptFilePath.replace(/\.(?:[tj]sx?|mjs)$/, '');
-          const candidate = resolveCandidate(baseWithoutExt, ['.tsx', '.ts', '.jsx', '.js']);
-          if (candidate) scriptFilePath = candidate;
-        }
 
         const result = await compileTypeScript(scriptFilePath);
         if ('error' in result) {
@@ -704,18 +666,18 @@ export async function buildProduction(options: BuildOptions = {}): Promise<Build
 
   let cssContent = '';
   const cssPromise = (async () => {
-    const res = await compileStylesheet({
-      inputPath: styleEntry.path,
-      minify: true,
-      outputPath: cssPath,
-      silent,
-      htmlSource: rawHtml,
-    });
-    if (res.error) {
-      console.error('❌ CSS Build failed:', res.error);
+    try {
+      cssContent = await compileTailwindCss({
+        inputPath: styleEntry.path,
+        minify: true,
+        outputPath: cssPath,
+        silent,
+        htmlSource: rawHtml,
+      });
+    } catch (err) {
+      console.error('❌ CSS Build failed:', err);
       process.exit(1);
     }
-    cssContent = res.code;
   })();
 
   const [jsBuild] = await Promise.all([jsPromise, cssPromise]);

@@ -3,7 +3,6 @@ import { join } from 'node:path';
 import { file as bunFile, type Server } from 'bun';
 import {
   buildProduction,
-  compileStylesheet,
   compileTailwindCss,
   CONFIG,
   createDevServer,
