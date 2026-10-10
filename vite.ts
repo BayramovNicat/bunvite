@@ -1,8 +1,8 @@
 import { existsSync, watch } from 'node:fs';
 import { cp, mkdir, readdir, rm } from 'node:fs/promises';
 import { networkInterfaces } from 'node:os';
-import { basename, join } from 'node:path';
-import { file as bunFile, type Server, serve } from 'bun';
+import { basename, dirname, join, relative } from 'node:path';
+import { file as bunFile, type BunPlugin, type Server, serve } from 'bun';
 
 export const CONFIG = {
   root: import.meta.dir,
@@ -242,6 +242,20 @@ export async function getStyleEntrypoint(htmlSource?: string): Promise<Entrypoin
       break;
     }
   }
+  if (!href) {
+    const appEntry = await getAppEntrypoint(html);
+    if (existsSync(appEntry.path)) {
+      const scriptCode = await bunFile(appEntry.path).text().catch(() => '');
+      const importMatch = scriptCode.match(/(?:^|\n)\s*import\s+['"]([^'"]+\.css)['"]/);
+      if (importMatch?.[1]) {
+        const resolved = join(dirname(appEntry.path), importMatch[1]);
+        if (existsSync(resolved)) {
+          const rel = `/${relative(CONFIG.root, resolved).replace(/\\/g, '/')}`;
+          return { file: basename(resolved), path: resolved, rel };
+        }
+      }
+    }
+  }
   return resolveEntry(href, join(CONFIG.srcDir, 'style.css'));
 }
 
@@ -309,6 +323,30 @@ export function startServerWithFallback(
   throw new Error(`Could not find an available port after ${maxAttempts} attempts starting from ${initialPort}`);
 }
 
+export function createCssPlugin(mode: 'dev' | 'prod'): BunPlugin {
+  return {
+    name: 'bunvite-css-loader',
+    setup(builder) {
+      builder.onLoad({ filter: /\.css$/ }, async (args) => {
+        if (mode === 'prod') {
+          return { contents: '', loader: 'js' };
+        }
+        const relPath = `/${relative(CONFIG.root, args.path).replace(/\\/g, '/')}`;
+        const js = `if (typeof document !== 'undefined') {
+  const href = ${JSON.stringify(relPath)};
+  if (!document.querySelector('link[href*="' + href + '"]')) {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = href;
+    document.head.appendChild(link);
+  }
+}`;
+        return { contents: js, loader: 'js' };
+      });
+    },
+  };
+}
+
 async function compileTypeScript(
   filePath: string,
   force = false,
@@ -326,6 +364,7 @@ async function compileTypeScript(
       target: 'browser',
       sourcemap: 'inline',
       minify: false,
+      plugins: [createCssPlugin('dev')],
     });
 
     if (!build.success || build.outputs.length === 0) {
@@ -526,6 +565,7 @@ export async function buildProduction(options: BuildOptions = {}): Promise<Build
     naming: '[name].[hash].js',
     target: 'browser',
     minify: true,
+    plugins: [createCssPlugin('prod')],
   });
 
   let cssContent = '';
@@ -551,8 +591,12 @@ export async function buildProduction(options: BuildOptions = {}): Promise<Build
   }
 
   const jsFile = basename(jsBuild.outputs[0].path);
-  const html = rawHtml
-    .replace(/<link\b[^>]*?rel=["']stylesheet["'][^>]*\/?>|<link\b[^>]*?href=["'][^"']+\.css["'][^>]*\/?>/i, `<style>${cssContent}</style>`)
+  const hasLinkTag = /<link\b[^>]*?(?:rel=["']stylesheet["']|href=["'][^"']+\.css["'])/i.test(rawHtml);
+  const html = (
+    hasLinkTag
+      ? rawHtml.replace(/<link\b[^>]*?rel=["']stylesheet["'][^>]*\/?>|<link\b[^>]*?href=["'][^"']+\.css["'][^>]*\/?>/i, `<style>${cssContent}</style>`)
+      : rawHtml.replace('</head>', `  <style>${cssContent}</style>\n  </head>`)
+  )
     .replace(/<script\b[^>]*?src=["'][^"']+["'][^>]*>/i, `<script type="module" src="${CONFIG.base}assets/${jsFile}">`)
     .replace('</head>', `  <link rel="modulepreload" href="${CONFIG.base}assets/${jsFile}" />\n  </head>`);
 

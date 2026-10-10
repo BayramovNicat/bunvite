@@ -5,6 +5,7 @@ import {
   buildProduction,
   compileTailwindCss,
   CONFIG,
+  createCssPlugin,
   createDevServer,
   formatBuildError,
   getBuildSummary,
@@ -540,5 +541,44 @@ describe('jsx and tsx support', () => {
     const jsxEntry = await getAppEntrypoint(jsxHtml);
     expect(jsxEntry.file).toBe('main.jsx');
     expect(jsxEntry.rel).toBe('/src/main.jsx');
+  });
+
+  test('resolves style entrypoint from script imports when HTML link is absent', async () => {
+    const noLinkHtml = `
+      <!doctype html>
+      <html>
+        <head><title>App</title></head>
+        <body>
+          <script type="module" src="/src/app.tsx"></script>
+        </body>
+      </html>
+    `;
+    const styleEntry = await getStyleEntrypoint(noLinkHtml);
+    expect(styleEntry.file).toBe('style.css');
+    expect(styleEntry.rel).toBe('/src/style.css');
+  });
+
+  test('compiles script with CSS import and injects DOM link runtime', async () => {
+    const res = await fetch(`${devBase}/src/app.tsx`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('application/javascript');
+    const js = await res.text();
+    expect(js).toContain('document.createElement("link")');
+    expect(js).toContain('/src/style.css');
+  });
+
+  test('production build inlines CSS when HTML has no link tag', async () => {
+    const originalIndex = await bunFile(join(CONFIG.root, 'index.html')).text();
+    const noLinkIndex = originalIndex.replace(/<link\b[^>]*?rel=["']stylesheet["'][^>]*\/?>\s*/i, '');
+    await Bun.write(join(CONFIG.root, 'index.html'), noLinkIndex);
+    try {
+      await buildProduction({ silent: true });
+      const distIndex = await bunFile(join(CONFIG.distDir, 'index.html')).text();
+      expect(distIndex).toContain('<style>');
+      expect(distIndex).toMatch(/<style>[\s\S]*<\/style>/);
+    } finally {
+      await Bun.write(join(CONFIG.root, 'index.html'), originalIndex);
+      await buildProduction({ silent: true });
+    }
   });
 });

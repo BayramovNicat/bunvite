@@ -1,3 +1,5 @@
+import './style.css';
+
 const root = document.querySelector('#app') as HTMLElement;
 const state = { count: 0 };
 
