@@ -14,14 +14,9 @@ export const CONFIG = {
   devPort: Number(process.env.PORT) || 5173,
   previewPort: Number(process.env.PORT) || 4173,
   base: (process.env.VITE_BASE || '/').replace(/\/?$/, '/'),
-  proxy: (process.env.VITE_PROXY_TARGET
-    ? { '/api': process.env.VITE_PROXY_TARGET }
-    : {}) as ProxyConfig,
 };
 
-const CACHE_DIR = join(CONFIG.root, '.cache');
-const SASS_CACHE_DIR = join(CACHE_DIR, 'sass');
-const TAILWIND_CACHE_DIR = join(CACHE_DIR, 'tailwind');
+const TAILWIND_CACHE_DIR = join(CONFIG.root, '.cache', 'tailwind');
 
 const IGNORED_WATCH_PREFIXES = [
   'node_modules',
@@ -38,8 +33,6 @@ const COMPRESSIBLE_EXTS = new Set([
   '.html',
   '.js',
   '.css',
-  '.scss',
-  '.sass',
   '.json',
   '.svg',
   '.txt',
@@ -47,15 +40,6 @@ const COMPRESSIBLE_EXTS = new Set([
   '.map',
 ]);
 
-export type ProxyTarget =
-  | string
-  | {
-      target: string;
-      changeOrigin?: boolean;
-      rewrite?: (path: string) => string;
-    };
-
-export type ProxyConfig = Record<string, ProxyTarget>;
 
 export interface EntrypointInfo {
   file: string;
@@ -63,17 +47,8 @@ export interface EntrypointInfo {
   rel: string;
 }
 
-export interface BuildStageTimings {
-  setup: number;
-  js: number;
-  css: number;
-  html: number;
-  summary: number;
-}
-
 export interface BuildProductionResult {
   elapsed: number;
-  stages: BuildStageTimings;
   summary: Array<{ path: string; size: number; gzip: number }>;
 }
 
@@ -127,7 +102,6 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
       header.querySelector("#hmr-reload-btn")?.addEventListener("click", () => location.reload());
       header.querySelector("#hmr-reset-btn")?.addEventListener("click", () => {
         delete window.__hmr_state__;
-        try { localStorage.removeItem("bunvite_todos"); } catch (_) {}
         location.reload();
       });
       header.querySelector("#hmr-close-btn")?.addEventListener("click", dismissOverlay);
@@ -171,12 +145,7 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
             const links = document.querySelectorAll('link[rel="stylesheet"]');
             for (const link of links) {
               const url = new URL(link.href);
-              if (
-                url.pathname === payload.path ||
-                url.pathname.endsWith(".css") ||
-                url.pathname.endsWith(".scss") ||
-                url.pathname.endsWith(".sass")
-              ) {
+              if (url.pathname === payload.path || url.pathname.endsWith(".css")) {
                 const newLink = link.cloneNode();
                 newLink.href = url.pathname + "?t=" + payload.timestamp;
                 newLink.onload = () => link.remove();
@@ -188,31 +157,9 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
 
           if (payload.type === "js-update") {
             const normPath = payload.path.replace(/^[./]+/, "/");
-            const mountEl = document.getElementById("app");
-            const prevInput = mountEl ? mountEl.querySelector("#todo-input") : null;
-            const inputState = prevInput ? {
-              value: prevInput.value,
-              wasFocused: document.activeElement === prevInput,
-              start: prevInput.selectionStart,
-              end: prevInput.selectionEnd
-            } : null;
-
             try {
               await import(normPath + "?t=" + payload.timestamp);
               dismissOverlay();
-
-              if (inputState && inputState.value) {
-                const newInput = mountEl?.querySelector("#todo-input");
-                if (newInput) {
-                  newInput.value = inputState.value;
-                  if (inputState.wasFocused) {
-                    newInput.focus();
-                    if (inputState.start !== null && inputState.end !== null) {
-                      newInput.setSelectionRange(inputState.start, inputState.end);
-                    }
-                  }
-                }
-              }
             } catch (err) {
               showOverlay(err?.stack || err?.message || String(err), "HMR Runtime Error");
             }
@@ -239,16 +186,6 @@ export function getTailwindCommand(args: string[]): string[] {
   return existsSync(localCli) ? ['bun', localCli, ...args] : ['bun', 'x', '@tailwindcss/cli', ...args];
 }
 
-export function getSassCommand(args: string[]): string[] {
-  const localCli = join(CONFIG.root, 'node_modules', 'sass', 'sass.js');
-  if (existsSync(localCli)) return ['bun', localCli, ...args];
-  const localBin = join(CONFIG.root, 'node_modules', '.bin', 'sass');
-  if (existsSync(localBin)) return [localBin, ...args];
-  const globalBin = Bun.which('sass');
-  return globalBin ? [globalBin, ...args] : ['bun', 'x', 'sass', ...args];
-}
-
-export const isSassFile = (filePath: string): boolean => /\.(?:scss|sass)$/i.test(filePath);
 export const isScriptFile = (filePath: string): boolean => /\.(?:[tj]sx?|mjs)$/i.test(filePath);
 
 function resolveCandidate(basePath: string, extensions: readonly string[]): string | null {
@@ -261,113 +198,6 @@ function resolveCandidate(basePath: string, extensions: readonly string[]): stri
 
 export function hasTailwindImport(cssText: string): boolean {
   return /@import\s*['"]tailwindcss/i.test(cssText.replace(/\/\*[\s\S]*?\*\//g, ''));
-}
-
-export interface CompileSassOptions {
-  inputPath?: string;
-  sourceText?: string;
-  outputPath?: string;
-  minify?: boolean;
-  loadPaths?: string[];
-  indented?: boolean;
-}
-
-export interface CompileSassResult {
-  code: string;
-  error?: string;
-}
-
-export async function compileSass(options: CompileSassOptions = {}): Promise<CompileSassResult> {
-  const inputPath = options.inputPath;
-  const isIndented = options.indented ?? (inputPath?.endsWith('.sass') ?? false);
-  let sourceText = options.sourceText;
-
-  if (sourceText === undefined && inputPath) {
-    const f = bunFile(inputPath);
-    if (!(await f.exists())) return { code: '', error: `File not found: ${inputPath}` };
-    sourceText = await f.text();
-  }
-
-  if (sourceText === undefined) {
-    return { code: '', error: 'No input source or path provided for Sass compilation' };
-  }
-
-  const cacheKey = Bun.hash(
-    `${sourceText}:${inputPath ?? ''}:${options.minify ? 'min' : 'raw'}:${isIndented}`,
-  ).toString(36);
-  const cachePath = join(SASS_CACHE_DIR, `${cacheKey}.css`);
-  const diskCache = bunFile(cachePath);
-
-  if (await diskCache.exists()) {
-    const cached = await diskCache.text();
-    if (options.outputPath) await Bun.write(options.outputPath, cached);
-    return { code: cached };
-  }
-
-  const TW_MARKER = '/*! __BUNVITE_TW_IMPORT__ */';
-  const hasTw = hasTailwindImport(sourceText);
-  const sassInput = hasTw
-    ? sourceText.replace(/@import\s*['"]tailwindcss['"][^;]*;?/gi, TW_MARKER)
-    : sourceText;
-
-  const defaultLoadPaths = [CONFIG.root, CONFIG.srcDir, join(CONFIG.root, 'node_modules')];
-  if (inputPath) {
-    const dir = join(inputPath, '..');
-    if (!defaultLoadPaths.includes(dir)) defaultLoadPaths.unshift(dir);
-  }
-  const allLoadPaths = Array.from(new Set([...(options.loadPaths ?? []), ...defaultLoadPaths]));
-
-  const args: string[] = ['--no-source-map', '--no-color'];
-  if (options.minify) args.push('--style=compressed');
-  if (isIndented) args.push('--indented');
-  for (const lp of allLoadPaths) args.push(`--load-path=${lp}`);
-
-  let code = '';
-  if (!hasTw && inputPath && existsSync(inputPath)) {
-    const proc = Bun.spawn(getSassCommand([...args, inputPath]), {
-      cwd: CONFIG.root,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-      proc.exited,
-    ]);
-    if (exitCode !== 0) {
-      return { code: '', error: stderr.trim() || `Sass compilation failed with exit code ${exitCode}` };
-    }
-    code = stdout;
-  } else {
-    await mkdir(SASS_CACHE_DIR, { recursive: true });
-    const tempInput = join(SASS_CACHE_DIR, `temp-${cacheKey}.${isIndented ? 'sass' : 'scss'}`);
-    await Bun.write(tempInput, sassInput);
-    try {
-      const proc = Bun.spawn(getSassCommand([...args, tempInput]), {
-        cwd: CONFIG.root,
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-      const [stdout, stderr, exitCode] = await Promise.all([
-        new Response(proc.stdout).text(),
-        new Response(proc.stderr).text(),
-        proc.exited,
-      ]);
-      if (exitCode !== 0) {
-        return { code: '', error: stderr.trim() || `Sass compilation failed with exit code ${exitCode}` };
-      }
-      code = stdout;
-    } finally {
-      await rm(tempInput, { force: true }).catch(() => {});
-    }
-  }
-
-  if (hasTw) code = code.replace(TW_MARKER, '@import "tailwindcss";');
-  if (options.outputPath) await Bun.write(options.outputPath, code);
-
-  await mkdir(SASS_CACHE_DIR, { recursive: true }).catch(() => {});
-  await Bun.write(cachePath, code).catch(() => {});
-  return { code };
 }
 
 export async function compileTailwindCss(options: {
@@ -465,44 +295,12 @@ export interface CompileStylesheetOptions {
 export async function compileStylesheet(
   options: CompileStylesheetOptions = {},
 ): Promise<{ code: string; error?: string }> {
-  const styleEntry = await getStyleEntrypoint(options.htmlSource);
-  const inputPath = options.inputPath ?? styleEntry.path;
-
-  if (isSassFile(inputPath)) {
-    const sassRes = await compileSass({ inputPath, minify: options.minify });
-    if (sassRes.error) return { code: '', error: sassRes.error };
-
-    if (hasTailwindImport(sassRes.code)) {
-      const tempPath = join(TAILWIND_CACHE_DIR, `sass-tw-${Bun.hash(sassRes.code).toString(36)}.css`);
-      await mkdir(TAILWIND_CACHE_DIR, { recursive: true });
-      const twInput = `@source "${join(CONFIG.root, 'index.html')}";\n@source "${CONFIG.srcDir}";\n${sassRes.code}`;
-      await Bun.write(tempPath, twInput);
-      try {
-        const twCode = await compileTailwindCss({
-          inputPath: tempPath,
-          minify: options.minify,
-          outputPath: options.outputPath,
-          silent: options.silent,
-          htmlSource: options.htmlSource,
-        });
-        return { code: twCode };
-      } finally {
-        await rm(tempPath, { force: true }).catch(() => {});
-      }
-    }
-
-    if (options.outputPath) await Bun.write(options.outputPath, sassRes.code);
-    return { code: sassRes.code };
+  try {
+    const code = await compileTailwindCss(options);
+    return { code };
+  } catch (err: unknown) {
+    return { code: '', error: err instanceof Error ? err.message : String(err) };
   }
-
-  const twCode = await compileTailwindCss({
-    inputPath,
-    minify: options.minify,
-    outputPath: options.outputPath,
-    silent: options.silent,
-    htmlSource: options.htmlSource,
-  });
-  return { code: twCode };
 }
 
 async function compileTailwind(force = false, inputPath?: string): Promise<string> {
@@ -514,38 +312,6 @@ async function compileTailwind(force = false, inputPath?: string): Promise<strin
   cachedCss = { code: res.code, path: inputPath, timestamp: Date.now() };
   return res.code;
 }
-
-export function createSassBunPlugin(mode: 'development' | 'production') {
-  return {
-    name: 'bunvite-sass-plugin',
-    setup(build: {
-      onLoad(
-        options: { filter: RegExp },
-        callback: (args: { path: string }) => Promise<{ contents: string; loader: 'js' | 'css' }>,
-      ): void;
-    }) {
-      build.onLoad({ filter: /\.(scss|sass)$/ }, async (args) => {
-        const res = await compileSass({ inputPath: args.path, minify: mode === 'production' });
-        if (res.error) throw new Error(res.error);
-        if (mode === 'development') {
-          const js = `(() => {
-            const id = ${JSON.stringify(args.path)};
-            let el = document.querySelector(\`style[data-vite-sass="\${id}"]\`);
-            if (!el) {
-              el = document.createElement("style");
-              el.setAttribute("data-vite-sass", id);
-              document.head.appendChild(el);
-            }
-            el.textContent = ${JSON.stringify(res.code)};
-          })();`;
-          return { contents: js, loader: 'js' };
-        }
-        return { contents: res.code, loader: 'css' };
-      });
-    },
-  };
-}
-
 
 export async function getAppEntrypoint(htmlSource?: string): Promise<EntrypointInfo> {
   const html = htmlSource ?? (await bunFile(join(CONFIG.root, 'index.html')).text().catch(() => ''));
@@ -579,7 +345,7 @@ export async function getAppEntrypoint(htmlSource?: string): Promise<EntrypointI
 
 export async function getStyleEntrypoint(htmlSource?: string): Promise<EntrypointInfo> {
   const html = htmlSource ?? (await bunFile(join(CONFIG.root, 'index.html')).text().catch(() => ''));
-  const linkMatches = html.matchAll(/<link\b[^>]*?\bhref=["']([^"']+\.(?:css|scss|sass))["'][^>]*>/gi);
+  const linkMatches = html.matchAll(/<link\b[^>]*?\bhref=["']([^"']+\.css)["'][^>]*>/gi);
   for (const m of linkMatches) {
     if (/rel=["']stylesheet["']/i.test(m[0])) {
       const rawHref = m[1];
@@ -592,12 +358,8 @@ export async function getStyleEntrypoint(htmlSource?: string): Promise<Entrypoin
     }
   }
 
-  const found = resolveCandidate(join(CONFIG.srcDir, 'style'), ['.scss', '.sass', '.css']);
-  if (found) {
-    const file = basename(found);
-    return { file, path: found, rel: `/src/${file}` };
-  }
-  return { file: 'style.css', path: join(CONFIG.srcDir, 'style.css'), rel: '/src/style.css' };
+  const fallback = join(CONFIG.srcDir, 'style.css');
+  return { file: 'style.css', path: fallback, rel: '/src/style.css' };
 }
 
 export function formatBuildError(err: unknown): string {
@@ -725,7 +487,6 @@ async function compileTypeScript(
       sourcemap: 'inline',
       minify: false,
       define: getClientEnv('development'),
-      plugins: [createSassBunPlugin('development')],
     });
 
     if (!build.success || build.outputs.length === 0) {
@@ -750,21 +511,9 @@ async function compileTypeScript(
 export function createDevServer(
   port = CONFIG.devPort,
   enableLiveReload = true,
-  proxy: ProxyConfig = CONFIG.proxy,
 ): Server<unknown> {
   const activeSockets = new Set<ServerWebSocket<unknown>>();
   compileTailwind();
-
-  const proxyEntries = Object.entries(proxy).map(([prefix, config]) => {
-    const isObj = typeof config === 'object';
-    return {
-      prefix,
-      target: isObj ? config.target : config,
-      changeOrigin: isObj ? Boolean(config.changeOrigin) : false,
-      rewrite: isObj && config.rewrite ? config.rewrite : undefined,
-    };
-  });
-  const hasProxy = proxyEntries.length > 0;
 
   if (enableLiveReload) {
     let debounceTimer: Timer | null = null;
@@ -783,7 +532,7 @@ export function createDevServer(
         }
 
         cachedCss = null;
-        if (isScriptFile(rawFile) || isSassFile(rawFile)) cachedJs.clear();
+        if (isScriptFile(rawFile)) cachedJs.clear();
 
         if (debounceTimer) clearTimeout(debounceTimer);
         debounceTimer = setTimeout(async () => {
@@ -799,20 +548,11 @@ export function createDevServer(
             }
           }
 
-          if (isSassFile(file)) {
-            const targetPath = join(CONFIG.root, file);
-            if (await bunFile(targetPath).exists()) {
-              const res = await compileSass({ inputPath: targetPath });
-              if (res.error && (await bunFile(targetPath).exists())) compileError = res.error;
-            }
-          }
-
           const messages: string[] = [];
           if (compileError) {
             messages.push(JSON.stringify({ type: 'build-error', message: compileError }));
           } else {
             const isCss = file.endsWith('.css');
-            const isSass = isSassFile(file);
             const isJsOrTs =
               file.startsWith('src/') &&
               (file.endsWith('.ts') ||
@@ -826,13 +566,13 @@ export function createDevServer(
             const usesTailwind =
               (await styleFile.exists()) && hasTailwindImport(await styleFile.text());
 
-            if (isCss || isSass || (usesTailwind && (isJsOrTs || isHtml))) {
+            if (isCss || (usesTailwind && (isJsOrTs || isHtml))) {
               try {
-                await compileTailwind(true, isCss || isSass ? join(CONFIG.root, file) : styleEntry.path);
+                await compileTailwind(true, isCss ? join(CONFIG.root, file) : styleEntry.path);
                 messages.push(
                   JSON.stringify({
                     type: 'css-update',
-                    path: isCss || isSass ? `/${file}` : styleEntry.rel,
+                    path: isCss ? `/${file}` : styleEntry.rel,
                     timestamp,
                   }),
                 );
@@ -885,32 +625,7 @@ export function createDevServer(
         });
       }
 
-      if (hasProxy) {
-        for (const entry of proxyEntries) {
-          if (pathname.startsWith(entry.prefix)) {
-            const rewrittenPath = entry.rewrite ? entry.rewrite(pathname) : pathname;
-            const targetUrl = new URL(rewrittenPath + url.search, entry.target);
-            const headers = new Headers(req.headers);
-            if (entry.changeOrigin) headers.set('host', targetUrl.host);
 
-            try {
-              return await fetch(targetUrl.toString(), {
-                method: req.method,
-                headers,
-                body: req.body,
-                // @ts-expect-error Bun supports duplex streaming
-                duplex: 'half',
-              });
-            } catch (err: unknown) {
-              const msg = err instanceof Error ? err.message : String(err);
-              return new Response(`Bad Gateway: Proxy error connecting to ${entry.target}\n${msg}`, {
-                status: 502,
-                headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Access-Control-Allow-Origin': '*' },
-              });
-            }
-          }
-        }
-      }
 
       if (pathname === '/ws-hmr' || pathname === '/ws-reload') {
         if (server.upgrade(req, { data: undefined })) return undefined;
@@ -927,13 +642,8 @@ export function createDevServer(
 
       const cleanPath = pathname.startsWith('/') ? pathname.slice(1) : pathname;
 
-      if (pathname.endsWith('.css') || pathname.endsWith('.scss') || pathname.endsWith('.sass')) {
-        let filePath = join(CONFIG.root, cleanPath);
-        if (!(await bunFile(filePath).exists()) && pathname.endsWith('.css')) {
-          const candidate = resolveCandidate(filePath.replace(/\.css$/, ''), ['.scss', '.sass']);
-          if (candidate) filePath = candidate;
-        }
-
+      if (pathname.endsWith('.css')) {
+        const filePath = join(CONFIG.root, cleanPath);
         try {
           const css = await compileTailwind(false, filePath);
           return devResponse(req, css, 'text/css; charset=utf-8');
@@ -989,7 +699,6 @@ export async function buildProduction(options: BuildOptions = {}): Promise<Build
   const start = performance.now();
   const assetsDir = join(CONFIG.distDir, 'assets');
 
-  const t0 = performance.now();
   const rawHtmlPromise = bunFile(join(CONFIG.root, 'index.html')).text();
   const setupPromise = (async () => {
     await rm(CONFIG.distDir, { recursive: true, force: true });
@@ -998,18 +707,14 @@ export async function buildProduction(options: BuildOptions = {}): Promise<Build
   })();
 
   const [rawHtml] = await Promise.all([rawHtmlPromise, setupPromise]);
-  const t1 = performance.now();
-
   const [jsEntry, styleEntry] = await Promise.all([
     getAppEntrypoint(rawHtml),
     getStyleEntrypoint(rawHtml),
   ]);
-  const cssBasename = styleEntry.file.replace(/\.(css|scss|sass)$/, '');
+  const cssBasename = styleEntry.file.replace(/\.css$/, '');
   const cssFile = `${cssBasename}.${Date.now().toString(36)}.css`;
   const cssPath = join(assetsDir, cssFile);
 
-  let tJsEnd = 0;
-  const tJsStart = performance.now();
   const jsPromise = Bun.build({
     entrypoints: [jsEntry.path],
     outdir: assetsDir,
@@ -1017,16 +722,9 @@ export async function buildProduction(options: BuildOptions = {}): Promise<Build
     target: 'browser',
     minify: true,
     define: getClientEnv('production'),
-    plugins: [createSassBunPlugin('production')],
-  }).then((res) => {
-    tJsEnd = performance.now();
-    return res;
   });
 
-  let tCssEnd = 0;
-  const tCssStart = performance.now();
   let cssContent = '';
-
   const cssPromise = (async () => {
     const res = await compileStylesheet({
       inputPath: styleEntry.path,
@@ -1036,11 +734,10 @@ export async function buildProduction(options: BuildOptions = {}): Promise<Build
       htmlSource: rawHtml,
     });
     if (res.error) {
-      console.error('❌ CSS/SCSS Build failed:', res.error);
+      console.error('❌ CSS Build failed:', res.error);
       process.exit(1);
     }
     cssContent = res.code;
-    tCssEnd = performance.now();
   })();
 
   const [jsBuild] = await Promise.all([jsPromise, cssPromise]);
@@ -1050,8 +747,6 @@ export async function buildProduction(options: BuildOptions = {}): Promise<Build
   }
 
   const jsFile = basename(jsBuild.outputs[0].path);
-  const t3 = performance.now();
-
   let html = replaceEnvInHtml(rawHtml);
   const basePrefix = CONFIG.base === '/' ? '/' : CONFIG.base;
   const escapedRel = styleEntry.rel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -1061,7 +756,7 @@ export async function buildProduction(options: BuildOptions = {}): Promise<Build
     replacedStyle !== html
       ? replacedStyle
       : html.replace(
-          /<link\s+rel=["']stylesheet["']\s+href=["'][^"']+\.(?:css|scss|sass)["']\s*\/?>/i,
+          /<link\s+rel=["']stylesheet["']\s+href=["'][^"']+\.css["']\s*\/?>/i,
           `<style>${cssContent}</style>`,
         );
 
@@ -1074,10 +769,9 @@ export async function buildProduction(options: BuildOptions = {}): Promise<Build
 
   html = html.replace('</head>', `  <link rel="modulepreload" href="${basePrefix}assets/${jsFile}" />\n  </head>`);
   await Bun.write(join(CONFIG.distDir, 'index.html'), html);
-  const t4 = performance.now();
 
   const summary = await getBuildSummary(CONFIG.distDir);
-  const t5 = performance.now();
+  const elapsed = performance.now() - start;
 
   if (!silent) {
     console.log('  dist/ output summary:');
@@ -1086,20 +780,10 @@ export async function buildProduction(options: BuildOptions = {}): Promise<Build
       const gzipKb = (item.gzip / 1024).toFixed(2);
       console.log(`  dist/${item.path.padEnd(28)} ${sizeKb.padStart(6)} kB │ gzip: ${gzipKb.padStart(5)} kB`);
     }
-    console.log(`\n✨ Production build completed in ${(t5 - start).toFixed(1)}ms!\n`);
+    console.log(`\n✨ Production build completed in ${elapsed.toFixed(1)}ms!\n`);
   }
 
-  return {
-    elapsed: t5 - start,
-    stages: {
-      setup: t1 - t0,
-      js: tJsEnd - tJsStart,
-      css: tCssEnd - tCssStart,
-      html: t4 - t3,
-      summary: t5 - t4,
-    },
-    summary,
-  };
+  return { elapsed, summary };
 }
 
 export async function getBuildSummary(
