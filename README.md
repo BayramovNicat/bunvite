@@ -30,7 +30,7 @@ Open [http://localhost:5173](http://localhost:5173).
 - **Zero dependencies:** No `vite`, `esbuild`, or heavy bundlers installed. Powered by native `Bun.serve` and `Bun.build`.
 - **TypeScript, JavaScript & JSX/TSX:** Native zero-config compilation for `.ts`, `.js`, `.tsx`, and `.jsx` powered by Bun's built-in transpiler.
 - **Tailwind CSS v4 & Sass:** Compiles on demand via `bunx @tailwindcss/cli` and `sass`, with disk caching in `.cache/`.
-- **Fast HMR:** WebSocket hot reloading. Preserves state bound to `window.__hmr_state__` and keeps active input focus across reloads.
+- **Fast HMR:** WebSocket hot reloading. Preserves state bound to top-level `state` objects and keeps active input focus across reloads.
 - **Environment variables:** Automatically loads `.env`. Any `VITE_*` variable is injected into `import.meta.env` and replaced in `index.html` (e.g. `%VITE_APP_TITLE%`).
 - **API proxy:** Set `VITE_PROXY_TARGET=http://localhost:8080` in `.env` to route `/api/*` requests to your backend. Custom rules can be set in `CONFIG.proxy` in `vite.ts`.
 - **Production build:** Hashes output (`app.[hash].js`, `style.[hash].css`), outputs size and gzip breakdown, and serves preview with immutable caching headers.

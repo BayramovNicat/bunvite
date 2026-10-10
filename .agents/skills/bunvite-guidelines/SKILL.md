@@ -54,15 +54,15 @@ All ambient declarations live in the root `types/` folder. Keep `src/` free of `
 
 ## 4. Hot Module Replacement & State Preservation
 
-### State Retention via `__hmr_state__`
+### State Retention via `state` Object
 
-The development compiler automatically preserves state across module reloads if bound to `window.__hmr_state__`:
+The development compiler automatically preserves state across module reloads by rewriting top-level `state = { ... }` declarations to `(window.__hmr_state__ ??= ...)` at dev time:
 
 ```typescript
-var state = (window.__hmr_state__ ??= {
+const state = {
   todos: [] as Todo[],
   filter: 'all' as Filter,
-});
+};
 ```
 
 ### Active Input Focus Retention
