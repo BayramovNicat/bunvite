@@ -14,7 +14,7 @@ export const CONFIG = {
   base: (process.env.VITE_BASE || '/').replace(/\/?$/, '/'),
 };
 
-const IGNORED_WATCH_PREFIXES = ['node_modules', 'dist', 'test', '.git', '.cache'];
+const IGNORED_WATCH_PATTERN = /^(?:node_modules|dist|test|\.git|\.cache)(?:\/|$)|(?:^|[/\\])(?:temp-|tmp-)|\.(?:swp|tmp)$|~$/;
 
 export interface EntrypointInfo {
   file: string;
@@ -57,20 +57,8 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
       overlay.onclick = (e) => {
         if (e.target === overlay) dismissOverlay();
       };
-
-      const card = document.createElement("div");
-      card.style.cssText = "background:#18181b;border:1px solid #ef4444;border-radius:12px;max-width:800px;width:100%;max-height:85vh;display:flex;flex-direction:column;overflow:hidden";
-      card.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#27272a;border-bottom:1px solid #3f3f46"><div style="display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:9999px;background:#ef4444"></span><span style="font-family:ui-monospace,monospace;font-size:12px;font-weight:600;color:#f43f5e;text-transform:uppercase">' + title + '</span></div><div style="display:flex;gap:8px"><button type="button" id="hmr-reload-btn" style="background:#3f3f46;border:none;color:#e4e4e7;border-radius:6px;font-size:12px;padding:4px 10px;cursor:pointer">Reload</button><button type="button" id="hmr-reset-btn" style="background:#4338ca;border:none;color:#fff;border-radius:6px;font-size:12px;padding:4px 10px;cursor:pointer">Reset & Reload</button><button type="button" id="hmr-close-btn" style="background:none;border:none;color:#a1a1aa;cursor:pointer;font-size:18px;line-height:1;padding:4px" title="Close (Esc)">&times;</button></div></div><div style="padding:20px;overflow-y:auto"><pre style="margin:0;color:#fca5a5;font-family:ui-monospace,monospace;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word"></pre></div>';
-
-      card.querySelector("#hmr-reload-btn")?.addEventListener("click", () => location.reload());
-      card.querySelector("#hmr-reset-btn")?.addEventListener("click", () => {
-        delete window.__hmr_state__;
-        location.reload();
-      });
-      card.querySelector("#hmr-close-btn")?.addEventListener("click", dismissOverlay);
-      (card.querySelector("pre")).textContent = message;
-
-      overlay.appendChild(card);
+      overlay.innerHTML = '<div style="background:#18181b;border:1px solid #ef4444;border-radius:12px;max-width:800px;width:100%;max-height:85vh;display:flex;flex-direction:column;overflow:hidden"><div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#27272a;border-bottom:1px solid #3f3f46"><div style="display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:9999px;background:#ef4444"></span><span style="font-family:ui-monospace,monospace;font-size:12px;font-weight:600;color:#f43f5e;text-transform:uppercase">' + title + '</span></div><div style="display:flex;gap:8px"><button type="button" id="hmr-reload-btn" onclick="location.reload()" style="background:#3f3f46;border:none;color:#e4e4e7;border-radius:6px;font-size:12px;padding:4px 10px;cursor:pointer">Reload</button><button type="button" id="hmr-reset-btn" onclick="delete window.__hmr_state__;location.reload()" style="background:#4338ca;border:none;color:#fff;border-radius:6px;font-size:12px;padding:4px 10px;cursor:pointer">Reset & Reload</button><button type="button" id="hmr-close-btn" onclick="this.closest(\\'[style*=fixed]\\').remove()" style="background:none;border:none;color:#a1a1aa;cursor:pointer;font-size:18px;line-height:1;padding:4px" title="Close (Esc)">&times;</button></div></div><div style="padding:20px;overflow-y:auto"><pre style="margin:0;color:#fca5a5;font-family:ui-monospace,monospace;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word"></pre></div></div>';
+      (overlay.querySelector("pre")).textContent = message;
       document.body.appendChild(overlay);
     };
 
@@ -192,7 +180,6 @@ export async function compileTailwindCss(options: {
   const twCmd = getTailwindCommand([
     '-i',
     inputPath,
-    ...(options.outputPath ? ['-o', options.outputPath] : []),
     ...(options.minify ? ['--minify'] : []),
     '--cwd',
     CONFIG.root,
@@ -210,22 +197,9 @@ export async function compileTailwindCss(options: {
       .join(':'),
   };
 
-  let code = '';
-  if (options.outputPath) {
-    const proc = Bun.spawn(twCmd, {
-      cwd: CONFIG.root,
-      env: twEnv,
-      stdout: options.silent ? 'ignore' : 'inherit',
-      stderr: options.silent ? 'ignore' : 'inherit',
-    });
-    await proc.exited;
-    const f = bunFile(options.outputPath);
-    code = (await f.exists()) ? await f.text() : '';
-  } else {
-    const proc = Bun.spawn(twCmd, { cwd: CONFIG.root, env: twEnv, stdout: 'pipe', stderr: 'pipe' });
-    code = await new Response(proc.stdout).text();
-  }
-
+  const proc = Bun.spawn(twCmd, { cwd: CONFIG.root, env: twEnv, stdout: 'pipe', stderr: 'pipe' });
+  const code = await new Response(proc.stdout).text();
+  if (options.outputPath) await Bun.write(options.outputPath, code);
   return code;
 }
 
@@ -347,18 +321,16 @@ export function startServerWithFallback(
   options: Parameters<typeof serve>[0],
   maxAttempts = 10,
 ): Server<unknown> {
-  const initialPort = typeof options.port === 'string' ? Number.parseInt(options.port, 10) : (options.port ?? 0);
+  const initialPort = Number(options.port) || 0;
   if (initialPort === 0) return serve(options);
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const targetPort = initialPort + attempt;
     try {
-      return serve({ ...options, port: targetPort } as Parameters<typeof serve>[0]);
+      return serve({ ...options, port: initialPort + attempt } as Parameters<typeof serve>[0]);
     } catch (err: unknown) {
       const isPortInUse =
         err instanceof Error &&
-        (('code' in err && (err as { code: string }).code === 'EADDRINUSE') ||
-          err.message.includes('in use'));
+        (('code' in err && (err as { code: string }).code === 'EADDRINUSE') || err.message.includes('in use'));
       if (!isPortInUse || attempt === maxAttempts - 1) throw err;
     }
   }
@@ -372,9 +344,7 @@ async function compileTypeScript(
   if (!force && cachedJs.has(filePath)) {
     return { code: cachedJs.get(filePath)?.code ?? '' };
   }
-
-  const file = bunFile(filePath);
-  if (!(await file.exists())) {
+  if (!existsSync(filePath)) {
     return { error: `File not found: ${filePath}` };
   }
 
@@ -387,21 +357,19 @@ async function compileTypeScript(
     });
 
     if (!build.success || build.outputs.length === 0) {
-      if (!(await file.exists())) return { error: `File not found: ${filePath}` };
-      const error = build.logs.map((l) => l.message ?? String(l)).join('\n');
-      return { error: error || 'Build failed' };
+      if (!existsSync(filePath)) return { error: `File not found: ${filePath}` };
+      return { error: build.logs.map((l) => l.message ?? String(l)).join('\n') || 'Build failed' };
     }
 
-    let code = await build.outputs[0].text();
-    code = code.replace(
+    const rawCode = await build.outputs[0].text();
+    const code = rawCode.replace(
       /^(?:export\s+)?(?:const|let|var)\s+state\s*=\s*(\{[\s\S]*?\});/m,
       'var state = (window.__hmr_state__ ??= $1);',
     );
     cachedJs.set(filePath, { code, timestamp: Date.now() });
     return { code };
   } catch (err: unknown) {
-    if (!(await file.exists())) return { error: `File not found: ${filePath}` };
-    return { error: formatBuildError(err) };
+    return { error: existsSync(filePath) ? formatBuildError(err) : `File not found: ${filePath}` };
   }
 }
 
@@ -415,17 +383,7 @@ export function createDevServer(
     let debounceTimer: Timer | null = null;
     try {
       watch(CONFIG.root, { recursive: true }, (_evt, rawFile) => {
-        if (
-          !rawFile ||
-          IGNORED_WATCH_PREFIXES.some((p) => rawFile === p || rawFile.startsWith(`${p}/`)) ||
-          basename(rawFile).startsWith('temp-') ||
-          basename(rawFile).startsWith('tmp-') ||
-          rawFile.endsWith('~') ||
-          rawFile.endsWith('.swp') ||
-          rawFile.endsWith('.tmp')
-        ) {
-          return;
-        }
+        if (!rawFile || IGNORED_WATCH_PATTERN.test(rawFile)) return;
 
         cachedCss = null;
         if (isScriptFile(rawFile)) cachedJs.clear();
@@ -514,11 +472,7 @@ export function createDevServer(
         return new Response('Upgrade failed', { status: 400 });
       }
 
-      const isHtmlNav =
-        req.headers.get('accept')?.includes('text/html') &&
-        !pathname.slice(pathname.lastIndexOf('/')).includes('.');
-
-      if (pathname === '/' || pathname === '/index.html' || isHtmlNav) {
+      if (pathname === '/' || pathname === '/index.html') {
         return devResponse(req, await renderDevHtml(enableLiveReload), 'text/html; charset=utf-8');
       }
 
