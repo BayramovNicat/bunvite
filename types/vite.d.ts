@@ -4,18 +4,9 @@ declare interface Window {
   __hmr_state__?: unknown;
 }
 
-declare interface ImportMetaEnv {
-  readonly VITE_APP_TITLE: string;
-  readonly VITE_API_URL: string;
-  readonly VITE_DEV_PORT: string;
-  readonly VITE_PROXY_TARGET: string;
-  readonly VITE_USE_HTTPS: string;
-}
-
 declare interface ImportMeta {
   dir: string;
   main: boolean;
-  readonly env: ImportMetaEnv;
 }
 
 declare module 'bun' {

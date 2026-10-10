@@ -4,8 +4,6 @@ import { networkInterfaces } from 'node:os';
 import { basename, join } from 'node:path';
 import { file as bunFile, type Server, type ServerWebSocket, serve } from 'bun';
 
-process.env.VITE_APP_TITLE ??= 'BunVite';
-
 export const CONFIG = {
   root: import.meta.dir,
   srcDir: join(import.meta.dir, 'src'),
@@ -384,34 +382,8 @@ export function formatBuildError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-export function getClientEnv(mode: 'development' | 'production'): Record<string, string> {
-  const isDev = mode === 'development';
-  const fullEnv: Record<string, unknown> = { DEV: isDev, PROD: !isDev, MODE: mode, BASE_URL: CONFIG.base };
-  const clientEnv: Record<string, string> = {
-    'import.meta.env.DEV': String(isDev),
-    'import.meta.env.PROD': String(!isDev),
-    'import.meta.env.MODE': JSON.stringify(mode),
-    'import.meta.env.BASE_URL': JSON.stringify(CONFIG.base),
-  };
-
-  for (const [key, value] of Object.entries(process.env)) {
-    if (key.startsWith('VITE_') && value !== undefined) {
-      clientEnv[`import.meta.env.${key}`] = JSON.stringify(value);
-      fullEnv[key] = value;
-    }
-  }
-  clientEnv['import.meta.env'] = JSON.stringify(fullEnv);
-  return clientEnv;
-}
-
-export function replaceEnvInHtml(html: string): string {
-  return html.replace(/%([A-Z0-9_]+)%/g, (match, name) => {
-    return name.startsWith('VITE_') && process.env[name] !== undefined ? process.env[name] : match;
-  });
-}
-
 async function renderDevHtml(enableLiveReload: boolean): Promise<string> {
-  let html = replaceEnvInHtml(await bunFile(join(CONFIG.root, 'index.html')).text());
+  const html = await bunFile(join(CONFIG.root, 'index.html')).text();
   return enableLiveReload ? html.replace('</body>', `${HMR_CLIENT_SCRIPT}</body>`) : html;
 }
 
@@ -486,7 +458,6 @@ async function compileTypeScript(
       target: 'browser',
       sourcemap: 'inline',
       minify: false,
-      define: getClientEnv('development'),
     });
 
     if (!build.success || build.outputs.length === 0) {
@@ -721,7 +692,6 @@ export async function buildProduction(options: BuildOptions = {}): Promise<Build
     naming: '[name].[hash].js',
     target: 'browser',
     minify: true,
-    define: getClientEnv('production'),
   });
 
   let cssContent = '';
@@ -747,7 +717,7 @@ export async function buildProduction(options: BuildOptions = {}): Promise<Build
   }
 
   const jsFile = basename(jsBuild.outputs[0].path);
-  let html = replaceEnvInHtml(rawHtml);
+  let html = rawHtml;
   const basePrefix = CONFIG.base === '/' ? '/' : CONFIG.base;
   const escapedRel = styleEntry.rel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const styleRegex = new RegExp(`<link\\s+[^>]*?href=["'](?:${escapedRel}|\\.?${escapedRel})["'][^>]*\\/?>`, 'i');

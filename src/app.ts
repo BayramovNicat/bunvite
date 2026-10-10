@@ -52,7 +52,7 @@ const TodoItem = (t: Todo) => /*html*/ `
   </li>
 `;
 
-const appTitle = import.meta.env.VITE_APP_TITLE || 'BunVite';
+const appTitle = 'BunVite';
 const root = document.querySelector('#app') as HTMLElement;
 
 root.className = 'size-full flex flex-col items-center justify-center p-4 sm:p-6';
