@@ -2,7 +2,7 @@ import { existsSync, watch } from 'node:fs';
 import { cp, mkdir, readdir, rm } from 'node:fs/promises';
 import { networkInterfaces } from 'node:os';
 import { basename, dirname, join, relative } from 'node:path';
-import { file as bunFile, type BunPlugin, type Server, serve } from 'bun';
+import type { BunPlugin, Server } from 'bun';
 
 export const CONFIG = {
   root: import.meta.dir,
@@ -14,8 +14,9 @@ export const CONFIG = {
   base: (process.env.VITE_BASE || '/').replace(/\/?$/, '/'),
 };
 
-const IGNORED_WATCH_PATTERN = /^(?:node_modules|dist|test|\.git|\.cache)(?:\/|$)|(?:^|[/\\])(?:temp-|tmp-)|\.(?:swp|tmp)$|~$/;
+const IGNORED_WATCH = /^(?:node_modules|dist|test|\.git|\.cache)(?:\/|$)|(?:^|[/\\])(?:temp-|tmp-)|\.(?:swp|tmp)$|~$/;
 const SCRIPT_EXTS = ['.tsx', '.ts', '.jsx', '.js'] as const;
+const CORS_HEADERS = { 'Access-Control-Allow-Origin': '*' } as const;
 
 export interface EntrypointInfo {
   file: string;
@@ -125,8 +126,9 @@ export function getTailwindCommand(args: string[]): string[] {
 export const isScriptFile = (filePath: string): boolean => /\.(?:[tj]sx?|mjs)$/i.test(filePath);
 
 function resolveCandidate(basePath: string, exts: readonly string[] = SCRIPT_EXTS): string | null {
+  const stripped = basePath.replace(/\.(?:[tj]sx?|mjs)$/, '');
   for (const ext of exts) {
-    const candidate = `${basePath}${ext}`;
+    const candidate = `${stripped}${ext}`;
     if (existsSync(candidate)) return candidate;
   }
   return null;
@@ -143,9 +145,8 @@ export async function compileTailwindCss(options: {
   silent?: boolean;
   htmlSource?: string;
 } = {}): Promise<string> {
-  const styleEntry = await getStyleEntrypoint(options.htmlSource);
-  const inputPath = options.inputPath ?? styleEntry.path;
-  const cssFile = bunFile(inputPath);
+  const inputPath = options.inputPath ?? (await getStyleEntrypoint(options.htmlSource)).path;
+  const cssFile = Bun.file(inputPath);
   if (!(await cssFile.exists())) {
     if (options.outputPath) await Bun.write(options.outputPath, '');
     return '';
@@ -200,35 +201,27 @@ async function compileTailwind(force = false, inputPath?: string): Promise<strin
   return code;
 }
 
-function resolveEntry(
-  rawSrc: string | null,
-  fallbackPath: string,
-  candidateExts: readonly string[] = SCRIPT_EXTS,
-): EntrypointInfo {
+function resolveEntry(rawSrc: string | null, fallbackPath: string): EntrypointInfo {
   if (rawSrc) {
     const clean = rawSrc.replace(/^[./]+/, '');
     const abs = join(CONFIG.root, clean);
+    const target = existsSync(abs) ? abs : resolveCandidate(abs) ?? abs;
     const rel = rawSrc.startsWith('/') ? rawSrc : `/${clean}`;
-    if (existsSync(abs)) return { file: basename(clean), path: abs, rel };
-    const candidate = resolveCandidate(abs.replace(/\.(?:[tj]sx?|mjs)$/, ''), candidateExts);
-    if (candidate) {
-      const ext = candidate.slice(candidate.lastIndexOf('.'));
-      return { file: basename(candidate), path: candidate, rel: rel.replace(/\.(?:[tj]sx?|mjs)$/, ext) };
-    }
-    return { file: basename(clean), path: abs, rel };
+    const targetRel = target !== abs ? rel.replace(/\.(?:[tj]sx?|mjs)$/, target.slice(target.lastIndexOf('.'))) : rel;
+    return { file: basename(target), path: target, rel: targetRel };
   }
-  const target = resolveCandidate(fallbackPath.replace(/\.(?:[tj]sx?|mjs)$/, ''), candidateExts) ?? fallbackPath;
+  const target = resolveCandidate(fallbackPath) ?? fallbackPath;
   return { file: basename(target), path: target, rel: `/src/${basename(target)}` };
 }
 
 export async function getAppEntrypoint(htmlSource?: string): Promise<EntrypointInfo> {
-  const html = htmlSource ?? (await bunFile(join(CONFIG.root, 'index.html')).text().catch(() => ''));
+  const html = htmlSource ?? (await Bun.file(join(CONFIG.root, 'index.html')).text().catch(() => ''));
   const match = html.match(/<script\b[^>]*?\bsrc=["']([^"']+\.(?:[tj]sx?|mjs))["'][^>]*>/i);
   return resolveEntry(match?.[1] ?? null, join(CONFIG.srcDir, 'app.ts'));
 }
 
 export async function getStyleEntrypoint(htmlSource?: string): Promise<EntrypointInfo> {
-  const html = htmlSource ?? (await bunFile(join(CONFIG.root, 'index.html')).text().catch(() => ''));
+  const html = htmlSource ?? (await Bun.file(join(CONFIG.root, 'index.html')).text().catch(() => ''));
   const linkMatch = html.match(
     /<link\b[^>]*?\b(?:rel=["']stylesheet["'][^>]*?href=["']([^"']+\.css)["']|href=["']([^"']+\.css)["'][^>]*?rel=["']stylesheet["'])/i,
   );
@@ -237,7 +230,7 @@ export async function getStyleEntrypoint(htmlSource?: string): Promise<Entrypoin
   if (!href) {
     const appEntry = await getAppEntrypoint(html);
     if (existsSync(appEntry.path)) {
-      const scriptCode = await bunFile(appEntry.path).text().catch(() => '');
+      const scriptCode = await Bun.file(appEntry.path).text().catch(() => '');
       const importMatch = scriptCode.match(/(?:^|\n)\s*import\s+['"]([^'"]+\.css)['"]/);
       if (importMatch?.[1]) {
         const resolved = join(dirname(appEntry.path), importMatch[1]);
@@ -278,7 +271,7 @@ export function formatBuildError(err: unknown): string {
 }
 
 async function renderDevHtml(enableLiveReload: boolean): Promise<string> {
-  const html = await bunFile(join(CONFIG.root, 'index.html')).text();
+  const html = await Bun.file(join(CONFIG.root, 'index.html')).text();
   return enableLiveReload ? html.replace('</body>', `${HMR_CLIENT_SCRIPT}</body>`) : html;
 }
 
@@ -289,27 +282,27 @@ export function devResponse(
   extraHeaders: Record<string, string> = {},
 ): Response {
   const etag = `"${Bun.hash(content).toString(16)}"`;
-  const headers = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache', ETag: etag, ...extraHeaders };
+  const headers = { ...CORS_HEADERS, 'Cache-Control': 'no-cache', ETag: etag, ...extraHeaders };
   if (req.headers.get('if-none-match') === etag) return new Response(null, { status: 304, headers });
   return new Response(content as BodyInit, { headers: { 'Content-Type': contentType, ...headers } });
 }
 
 async function serveStaticFile(req: Request, absPath: string): Promise<Response | null> {
-  const file = bunFile(absPath);
+  const file = Bun.file(absPath);
   if (!(await file.stat().catch(() => null))?.isFile()) return null;
   return devResponse(req, await file.bytes(), file.type || 'application/octet-stream');
 }
 
 export function startServerWithFallback(
-  options: Parameters<typeof serve>[0],
+  options: Parameters<typeof Bun.serve>[0],
   maxAttempts = 10,
 ): Server<unknown> {
   const initialPort = Number(options.port) || 0;
-  if (initialPort === 0) return serve(options);
+  if (initialPort === 0) return Bun.serve(options);
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      return serve({ ...options, port: initialPort + attempt } as Parameters<typeof serve>[0]);
+      return Bun.serve({ ...options, port: initialPort + attempt } as Parameters<typeof Bun.serve>[0]);
     } catch (err: unknown) {
       const inUse =
         err instanceof Error &&
@@ -374,18 +367,31 @@ async function compileTypeScript(
   }
 }
 
+function resolveScriptPath(cleanPath: string): string | null {
+  const abs = join(CONFIG.root, cleanPath);
+  if (existsSync(abs)) return isScriptFile(cleanPath) ? abs : null;
+  if (cleanPath.startsWith('src/') || isScriptFile(cleanPath)) {
+    return resolveCandidate(abs);
+  }
+  return null;
+}
+
 export function createDevServer(
   port = CONFIG.devPort,
   enableLiveReload = true,
 ): Server<unknown> {
   let server: Server<unknown>;
   const notify = (data: object) => server.publish('hmr', JSON.stringify(data));
+  const fail = (message: string) => {
+    notify({ type: 'build-error', message });
+    return new Response(message, { status: 500, headers: CORS_HEADERS });
+  };
 
   if (enableLiveReload) {
     let debounceTimer: Timer | null = null;
     try {
       watch(CONFIG.root, { recursive: true }, (_evt, rawFile) => {
-        if (!rawFile || IGNORED_WATCH_PATTERN.test(rawFile)) return;
+        if (!rawFile || IGNORED_WATCH.test(rawFile)) return;
 
         cachedCss = null;
         if (isScriptFile(rawFile)) cachedJs.clear();
@@ -400,17 +406,14 @@ export function createDevServer(
 
           if (isJsOrTs) {
             const targetPath = join(CONFIG.root, file);
-            if (await bunFile(targetPath).exists()) {
+            if (await Bun.file(targetPath).exists()) {
               const res = await compileTypeScript(targetPath, true);
-              if ('error' in res && (await bunFile(targetPath).exists())) {
-                notify({ type: 'build-error', message: res.error });
-                return;
-              }
+              if ('error' in res) return notify({ type: 'build-error', message: res.error });
             }
           }
 
           const styleEntry = await getStyleEntrypoint();
-          const styleFile = bunFile(styleEntry.path);
+          const styleFile = Bun.file(styleEntry.path);
           const usesTailwind =
             (await styleFile.exists()) && hasTailwindImport(await styleFile.text());
 
@@ -452,7 +455,7 @@ export function createDevServer(
         return new Response(null, {
           status: 204,
           headers: {
-            'Access-Control-Allow-Origin': '*',
+            ...CORS_HEADERS,
             'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH, OPTIONS',
             'Access-Control-Allow-Headers': '*',
           },
@@ -460,8 +463,7 @@ export function createDevServer(
       }
 
       if (pathname === '/ws-hmr') {
-        if (server.upgrade(req, { data: undefined })) return undefined;
-        return new Response('Upgrade failed', { status: 400 });
+        return server.upgrade(req, { data: undefined }) ? undefined : new Response('Upgrade failed', { status: 400 });
       }
 
       if (pathname === '/' || pathname === '/index.html') {
@@ -475,40 +477,27 @@ export function createDevServer(
           const css = await compileTailwind(false, join(CONFIG.root, cleanPath));
           return devResponse(req, css, 'text/css; charset=utf-8');
         } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : String(err);
-          notify({ type: 'build-error', message });
-          return new Response(message, { status: 500, headers: { 'Access-Control-Allow-Origin': '*' } });
+          return fail(err instanceof Error ? err.message : String(err));
         }
       }
 
-      const scriptPath = pathname.startsWith('/src/')
-        ? (existsSync(join(CONFIG.root, cleanPath))
-            ? join(CONFIG.root, cleanPath)
-            : resolveCandidate(join(CONFIG.root, cleanPath).replace(/\.(?:[tj]sx?|mjs)$/, '')))
-        : isScriptFile(pathname)
-          ? join(CONFIG.root, cleanPath)
-          : null;
-
+      const scriptPath = resolveScriptPath(cleanPath);
       if (scriptPath) {
         const result = await compileTypeScript(scriptPath);
-        if ('error' in result) {
-          notify({ type: 'build-error', message: result.error });
-          return new Response(result.error, { status: 500, headers: { 'Access-Control-Allow-Origin': '*' } });
-        }
+        if ('error' in result) return fail(result.error);
         return devResponse(req, result.code, 'application/javascript; charset=utf-8');
       }
 
-      const publicRes = await serveStaticFile(req, join(CONFIG.publicDir, cleanPath));
-      if (publicRes) return publicRes;
-
-      const rootRes = await serveStaticFile(req, join(CONFIG.root, cleanPath));
-      if (rootRes) return rootRes;
+      for (const dir of [CONFIG.publicDir, CONFIG.root]) {
+        const res = await serveStaticFile(req, join(dir, cleanPath));
+        if (res) return res;
+      }
 
       if (req.headers.get('accept')?.includes('text/html')) {
         return devResponse(req, await renderDevHtml(enableLiveReload), 'text/html; charset=utf-8');
       }
 
-      return new Response('Not Found', { status: 404, headers: { 'Access-Control-Allow-Origin': '*' } });
+      return new Response('Not Found', { status: 404, headers: CORS_HEADERS });
     },
   });
 
@@ -522,7 +511,7 @@ export async function buildProduction(options: BuildOptions = {}): Promise<Build
   const assetsDir = join(CONFIG.distDir, 'assets');
 
   const [rawHtml] = await Promise.all([
-    bunFile(join(CONFIG.root, 'index.html')).text(),
+    Bun.file(join(CONFIG.root, 'index.html')).text(),
     rm(CONFIG.distDir, { recursive: true, force: true }),
   ]);
   await Promise.all([
@@ -546,34 +535,30 @@ export async function buildProduction(options: BuildOptions = {}): Promise<Build
     plugins: [createCssPlugin('prod')],
   });
 
-  let cssContent = '';
-  const cssPromise = (async () => {
-    try {
-      cssContent = await compileTailwindCss({
-        inputPath: styleEntry.path,
-        minify: true,
-        outputPath: cssPath,
-        silent,
-        htmlSource: rawHtml,
-      });
-    } catch (err) {
-      console.error('❌ CSS Build failed:', err);
-      process.exit(1);
-    }
-  })();
+  const cssPromise = compileTailwindCss({
+    inputPath: styleEntry.path,
+    minify: true,
+    outputPath: cssPath,
+    silent,
+    htmlSource: rawHtml,
+  }).catch((err) => {
+    console.error('❌ CSS Build failed:', err);
+    process.exit(1);
+  });
 
-  const [jsBuild] = await Promise.all([jsPromise, cssPromise]);
+  const [jsBuild, cssContent] = await Promise.all([jsPromise, cssPromise]);
   if (!jsBuild.success || jsBuild.outputs.length === 0) {
     console.error('❌ JS Build failed:', jsBuild.logs);
     process.exit(1);
   }
 
   const jsFile = basename(jsBuild.outputs[0].path);
+  const styleTag = `<style>${cssContent}</style>`;
   const hasLinkTag = /<link\b[^>]*?(?:rel=["']stylesheet["']|href=["'][^"']+\.css["'])/i.test(rawHtml);
   const html = (
     hasLinkTag
-      ? rawHtml.replace(/<link\b[^>]*?rel=["']stylesheet["'][^>]*\/?>|<link\b[^>]*?href=["'][^"']+\.css["'][^>]*\/?>/i, `<style>${cssContent}</style>`)
-      : rawHtml.replace('</head>', `  <style>${cssContent}</style>\n  </head>`)
+      ? rawHtml.replace(/<link\b[^>]*?rel=["']stylesheet["'][^>]*\/?>|<link\b[^>]*?href=["'][^"']+\.css["'][^>]*\/?>/i, styleTag)
+      : rawHtml.replace('</head>', `  ${styleTag}\n  </head>`)
   )
     .replace(/<script\b[^>]*?src=["'][^"']+["'][^>]*>/i, `<script type="module" src="${CONFIG.base}assets/${jsFile}">`)
     .replace('</head>', `  <link rel="modulepreload" href="${CONFIG.base}assets/${jsFile}" />\n  </head>`);
@@ -602,7 +587,7 @@ export async function getBuildSummary(
   const entries = await readdir(distDir, { recursive: true });
   const results = await Promise.all(
     entries.map(async (entry) => {
-      const f = bunFile(join(distDir, entry));
+      const f = Bun.file(join(distDir, entry));
       if (!(await f.stat().catch(() => null))?.isFile()) return null;
       const bytes = await f.bytes();
       return {
@@ -624,35 +609,33 @@ export function previewProduction(port = CONFIG.previewPort): Server<unknown> {
   const server = startServerWithFallback({
     port,
     async fetch(req) {
-      const url = new URL(req.url);
-      let path = url.pathname;
+      let path = new URL(req.url).pathname;
       if (CONFIG.base !== '/' && path.startsWith(CONFIG.base)) {
         path = path.slice(CONFIG.base.length - 1);
       }
       if (path === '/' || path === '') path = '/index.html';
 
       const filePath = join(CONFIG.distDir, path);
-      const file = bunFile(filePath);
-      if (await file.exists()) {
-        const headers: Record<string, string> = path.startsWith('/assets/')
-          ? { 'Cache-Control': 'public, max-age=31536000, immutable' }
-          : {};
+      const file = Bun.file(filePath);
+      if (!(await file.exists())) return new Response('Not Found', { status: 404 });
 
-        if (req.headers.get('accept-encoding')?.includes('gzip') && /\.(?:html?|js|css|json|svg|txt|xml|map)$/i.test(path)) {
-          let gzipped = gzipCache.get(filePath);
-          if (!gzipped) {
-            gzipped = Bun.gzipSync(await file.bytes());
-            gzipCache.set(filePath, gzipped);
-          }
-          headers['Content-Encoding'] = 'gzip';
-          headers['Content-Type'] = file.type || 'application/octet-stream';
-          headers.Vary = 'Accept-Encoding';
-          return new Response(gzipped as BodyInit, { headers });
+      const headers: Record<string, string> = path.startsWith('/assets/')
+        ? { 'Cache-Control': 'public, max-age=31536000, immutable' }
+        : {};
+
+      if (req.headers.get('accept-encoding')?.includes('gzip') && /\.(?:html?|js|css|json|svg|txt|xml|map)$/i.test(path)) {
+        let gzipped = gzipCache.get(filePath);
+        if (!gzipped) {
+          gzipped = Bun.gzipSync(await file.bytes());
+          gzipCache.set(filePath, gzipped);
         }
-
-        return new Response(file as unknown as BodyInit, { headers });
+        headers['Content-Encoding'] = 'gzip';
+        headers['Content-Type'] = file.type || 'application/octet-stream';
+        headers.Vary = 'Accept-Encoding';
+        return new Response(gzipped as BodyInit, { headers });
       }
-      return new Response('Not Found', { status: 404 });
+
+      return new Response(file as unknown as BodyInit, { headers });
     },
   });
 
