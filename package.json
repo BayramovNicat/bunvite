@@ -27,5 +27,8 @@
     "test": "bun test",
     "check": "bun run typecheck && bun run lint && bun run test"
   },
-  "type": "module"
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "^1.4.2"
+  }
 }
