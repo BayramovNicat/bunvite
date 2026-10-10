@@ -2,7 +2,7 @@ import { existsSync, watch } from 'node:fs';
 import { cp, mkdir, readdir, rm } from 'node:fs/promises';
 import { networkInterfaces } from 'node:os';
 import { basename, join } from 'node:path';
-import { file as bunFile, type Server, type ServerWebSocket, serve } from 'bun';
+import { file as bunFile, type Server, serve } from 'bun';
 
 export const CONFIG = {
   root: import.meta.dir,
@@ -14,21 +14,7 @@ export const CONFIG = {
   base: (process.env.VITE_BASE || '/').replace(/\/?$/, '/'),
 };
 
-const TAILWIND_CACHE_DIR = join(CONFIG.root, '.cache', 'tailwind');
-
 const IGNORED_WATCH_PREFIXES = ['node_modules', 'dist', 'test', '.git', '.cache'];
-
-const COMPRESSIBLE_EXTS = new Set([
-  '.html',
-  '.js',
-  '.css',
-  '.json',
-  '.svg',
-  '.txt',
-  '.xml',
-  '.map',
-]);
-
 
 export interface EntrypointInfo {
   file: string;
@@ -45,24 +31,19 @@ export interface BuildOptions {
   silent?: boolean;
 }
 
-let cachedCss: { code: string; path?: string; timestamp: number } | null = null;
+let cachedCss: { code: string; path?: string } | null = null;
 const cachedJs = new Map<string, { code: string; timestamp: number }>();
 
 const HMR_CLIENT_SCRIPT = /*html*/ `
 <script>
   (() => {
-    const proto = location.protocol === "https:" ? "wss:" : "ws:";
     let ws;
     let overlay = null;
-    window.__hmr__ = {
-      onUpdate() {}
-    };
+    window.__hmr__ = { onUpdate() {} };
 
     const dismissOverlay = () => {
-      if (overlay) {
-        overlay.remove();
-        overlay = null;
-      }
+      overlay?.remove();
+      overlay = null;
     };
 
     window.addEventListener("keydown", (e) => {
@@ -79,28 +60,16 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
 
       const card = document.createElement("div");
       card.style.cssText = "background:#18181b;border:1px solid #ef4444;border-radius:12px;max-width:800px;width:100%;max-height:85vh;display:flex;flex-direction:column;overflow:hidden";
+      card.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#27272a;border-bottom:1px solid #3f3f46"><div style="display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:9999px;background:#ef4444"></span><span style="font-family:ui-monospace,monospace;font-size:12px;font-weight:600;color:#f43f5e;text-transform:uppercase">' + title + '</span></div><div style="display:flex;gap:8px"><button type="button" id="hmr-reload-btn" style="background:#3f3f46;border:none;color:#e4e4e7;border-radius:6px;font-size:12px;padding:4px 10px;cursor:pointer">Reload</button><button type="button" id="hmr-reset-btn" style="background:#4338ca;border:none;color:#fff;border-radius:6px;font-size:12px;padding:4px 10px;cursor:pointer">Reset & Reload</button><button type="button" id="hmr-close-btn" style="background:none;border:none;color:#a1a1aa;cursor:pointer;font-size:18px;line-height:1;padding:4px" title="Close (Esc)">&times;</button></div></div><div style="padding:20px;overflow-y:auto"><pre style="margin:0;color:#fca5a5;font-family:ui-monospace,monospace;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word"></pre></div>';
 
-      const header = document.createElement("div");
-      header.style.cssText = "display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#27272a;border-bottom:1px solid #3f3f46";
-      header.innerHTML = '<div style="display:flex;align-items:center;gap:8px"><span style="display:inline-block;width:8px;height:8px;border-radius:9999px;background:#ef4444"></span><span style="font-family:ui-monospace,monospace;font-size:12px;font-weight:600;color:#f43f5e;text-transform:uppercase">' + title + '</span></div><div style="display:flex;align-items:center;gap:8px"><button type="button" id="hmr-reload-btn" style="background:#3f3f46;border:none;color:#e4e4e7;border-radius:6px;font-size:12px;padding:4px 10px;cursor:pointer">Reload</button><button type="button" id="hmr-reset-btn" style="background:#4338ca;border:none;color:#fff;border-radius:6px;font-size:12px;padding:4px 10px;cursor:pointer">Reset & Reload</button><button type="button" id="hmr-close-btn" style="background:none;border:none;color:#a1a1aa;cursor:pointer;font-size:18px;line-height:1;padding:4px" title="Close (Esc)">&times;</button></div>';
-
-      header.querySelector("#hmr-reload-btn")?.addEventListener("click", () => location.reload());
-      header.querySelector("#hmr-reset-btn")?.addEventListener("click", () => {
+      card.querySelector("#hmr-reload-btn")?.addEventListener("click", () => location.reload());
+      card.querySelector("#hmr-reset-btn")?.addEventListener("click", () => {
         delete window.__hmr_state__;
         location.reload();
       });
-      header.querySelector("#hmr-close-btn")?.addEventListener("click", dismissOverlay);
+      card.querySelector("#hmr-close-btn")?.addEventListener("click", dismissOverlay);
+      (card.querySelector("pre")).textContent = message;
 
-      const body = document.createElement("div");
-      body.style.cssText = "padding:20px;overflow-y:auto";
-
-      const pre = document.createElement("pre");
-      pre.style.cssText = "margin:0;color:#fca5a5;font-family:ui-monospace,monospace;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word";
-      pre.textContent = message;
-
-      body.appendChild(pre);
-      card.appendChild(header);
-      card.appendChild(body);
       overlay.appendChild(card);
       document.body.appendChild(overlay);
     };
@@ -116,7 +85,7 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
     });
 
     const connect = () => {
-      ws = new WebSocket(proto + "//" + location.host + "/ws-hmr");
+      ws = new WebSocket((location.protocol === "https:" ? "wss:" : "ws:") + "//" + location.host + "/ws-hmr");
       ws.onmessage = async (e) => {
         try {
           const payload = JSON.parse(e.data);
@@ -127,8 +96,7 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
           dismissOverlay();
 
           if (payload.type === "css-update") {
-            const links = document.querySelectorAll('link[rel="stylesheet"]');
-            for (const link of links) {
+            for (const link of document.querySelectorAll('link[rel="stylesheet"]')) {
               const url = new URL(link.href);
               if (url.pathname === payload.path || url.pathname.endsWith(".css")) {
                 const newLink = link.cloneNode();
@@ -141,9 +109,8 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
           }
 
           if (payload.type === "js-update") {
-            const normPath = payload.path.replace(/^[./]+/, "/");
             try {
-              await import(normPath + "?t=" + payload.timestamp);
+              await import(payload.path.replace(/^[./]+/, "/") + "?t=" + payload.timestamp);
               dismissOverlay();
             } catch (err) {
               showOverlay(err?.stack || err?.message || String(err), "HMR Runtime Error");
@@ -169,12 +136,12 @@ let cachedTailwindBase: string[] | null = null;
 export function getTailwindCommand(args: string[]): string[] {
   if (!cachedTailwindBase) {
     const globalBin = Bun.which('tailwindcss');
-    if (globalBin) {
-      cachedTailwindBase = [globalBin];
-    } else {
-      const localCli = join(CONFIG.root, 'node_modules', '@tailwindcss', 'cli', 'dist', 'index.mjs');
-      cachedTailwindBase = existsSync(localCli) ? ['bun', localCli] : ['bun', 'x', '@tailwindcss/cli'];
-    }
+    const localCli = join(CONFIG.root, 'node_modules', '@tailwindcss', 'cli', 'dist', 'index.mjs');
+    cachedTailwindBase = globalBin
+      ? [globalBin]
+      : existsSync(localCli)
+        ? ['bun', localCli]
+        : ['bun', 'x', '@tailwindcss/cli'];
   }
   return [...cachedTailwindBase, ...args];
 }
@@ -222,19 +189,6 @@ export async function compileTailwindCss(options: {
     return output;
   }
 
-  const html = options.htmlSource ?? (await bunFile(join(CONFIG.root, 'index.html')).text().catch(() => ''));
-  const entry = await getAppEntrypoint(html);
-  const appCode = await bunFile(entry.path).text().catch(() => '');
-  const cacheKey = Bun.hash(`${cssText}:${html}:${appCode}`).toString(36);
-  const cachePath = join(TAILWIND_CACHE_DIR, `${cacheKey}.${options.minify ? 'min' : 'raw'}.css`);
-  const diskCache = bunFile(cachePath);
-
-  if (await diskCache.exists()) {
-    const cached = await diskCache.text();
-    if (options.outputPath) await Bun.write(options.outputPath, cached);
-    return cached;
-  }
-
   const twCmd = getTailwindCommand([
     '-i',
     inputPath,
@@ -272,8 +226,6 @@ export async function compileTailwindCss(options: {
     code = await new Response(proc.stdout).text();
   }
 
-  await mkdir(TAILWIND_CACHE_DIR, { recursive: true }).catch(() => {});
-  await Bun.write(cachePath, code).catch(() => {});
   return code;
 }
 
@@ -282,68 +234,66 @@ async function compileTailwind(force = false, inputPath?: string): Promise<strin
     return cachedCss.code;
   }
   const code = await compileTailwindCss({ inputPath, minify: false, silent: true });
-  cachedCss = { code, path: inputPath, timestamp: Date.now() };
+  cachedCss = { code, path: inputPath };
   return code;
+}
+
+function resolveEntry(
+  rawSrc: string | null,
+  fallbackPath: string,
+  candidateExts?: readonly string[],
+): EntrypointInfo {
+  if (rawSrc) {
+    const clean = rawSrc.replace(/^[./]+/, '');
+    const abs = join(CONFIG.root, clean);
+    const rel = rawSrc.startsWith('/') ? rawSrc : `/${clean}`;
+    if (existsSync(abs)) return { file: basename(clean), path: abs, rel };
+    if (candidateExts) {
+      const candidate = resolveCandidate(abs.replace(/\.(?:[tj]sx?|mjs)$/, ''), candidateExts);
+      if (candidate) {
+        const ext = candidate.slice(candidate.lastIndexOf('.'));
+        return { file: basename(candidate), path: candidate, rel: rel.replace(/\.(?:[tj]sx?|mjs)$/, ext) };
+      }
+    }
+    return { file: basename(clean), path: abs, rel };
+  }
+  const candidate = candidateExts
+    ? resolveCandidate(fallbackPath.replace(/\.(?:[tj]sx?|mjs)$/, ''), candidateExts)
+    : null;
+  const target = candidate ?? fallbackPath;
+  return { file: basename(target), path: target, rel: `/src/${basename(target)}` };
 }
 
 export async function getAppEntrypoint(htmlSource?: string): Promise<EntrypointInfo> {
   const html = htmlSource ?? (await bunFile(join(CONFIG.root, 'index.html')).text().catch(() => ''));
   const match = html.match(/<script\b[^>]*?\bsrc=["']([^"']+\.(?:[tj]sx?|mjs))["'][^>]*>/i);
-  if (match) {
-    const rawSrc = match[1];
-    const cleanPath = rawSrc.replace(/^[./]+/, '');
-    const absPath = join(CONFIG.root, cleanPath);
-    if (existsSync(absPath)) {
-      return { file: basename(cleanPath), path: absPath, rel: rawSrc.startsWith('/') ? rawSrc : `/${cleanPath}` };
-    }
-    const candidate = resolveCandidate(absPath.replace(/\.(?:[tj]sx?|mjs)$/, ''), ['.tsx', '.ts', '.jsx', '.js']);
-    if (candidate) {
-      const ext = candidate.slice(candidate.lastIndexOf('.'));
-      return {
-        file: basename(candidate),
-        path: candidate,
-        rel: (rawSrc.startsWith('/') ? rawSrc : `/${cleanPath}`).replace(/\.(?:[tj]sx?|mjs)$/, ext),
-      };
-    }
-    return { file: basename(cleanPath), path: absPath, rel: rawSrc.startsWith('/') ? rawSrc : `/${cleanPath}` };
-  }
-
-  const found = resolveCandidate(join(CONFIG.srcDir, 'app'), ['.tsx', '.ts', '.jsx', '.js']);
-  if (found) {
-    const file = basename(found);
-    return { file, path: found, rel: `/src/${file}` };
-  }
-  return { file: 'app.ts', path: join(CONFIG.srcDir, 'app.ts'), rel: '/src/app.ts' };
+  return resolveEntry(match?.[1] ?? null, join(CONFIG.srcDir, 'app.ts'), ['.tsx', '.ts', '.jsx', '.js']);
 }
 
 export async function getStyleEntrypoint(htmlSource?: string): Promise<EntrypointInfo> {
   const html = htmlSource ?? (await bunFile(join(CONFIG.root, 'index.html')).text().catch(() => ''));
-  const linkMatches = html.matchAll(/<link\b[^>]*?\bhref=["']([^"']+\.css)["'][^>]*>/gi);
-  for (const m of linkMatches) {
+  const matches = html.matchAll(/<link\b[^>]*?\bhref=["']([^"']+\.css)["'][^>]*>/gi);
+  let href: string | null = null;
+  for (const m of matches) {
     if (/rel=["']stylesheet["']/i.test(m[0])) {
-      const rawHref = m[1];
-      const cleanPath = rawHref.replace(/^[./]+/, '');
-      return {
-        file: basename(cleanPath),
-        path: join(CONFIG.root, cleanPath),
-        rel: rawHref.startsWith('/') ? rawHref : `/${cleanPath}`,
-      };
+      href = m[1];
+      break;
     }
   }
-
-  const fallback = join(CONFIG.srcDir, 'style.css');
-  return { file: 'style.css', path: fallback, rel: '/src/style.css' };
+  return resolveEntry(href, join(CONFIG.srcDir, 'style.css'));
 }
 
 export function formatBuildError(err: unknown): string {
-  const e = err as {
-    errors?: Array<{
-      message?: string;
-      position?: { file?: string; line?: number; column?: number; lineText?: string };
-    }>;
-  };
-  if (Array.isArray(e?.errors) && e.errors.length > 0) {
-    return e.errors
+  const errors = (
+    err as {
+      errors?: Array<{
+        message?: string;
+        position?: { file?: string; line?: number; column?: number; lineText?: string };
+      }>;
+    }
+  )?.errors;
+  if (Array.isArray(errors) && errors.length > 0) {
+    return errors
       .map((item) => {
         const pos = item.position;
         if (pos?.lineText !== undefined) {
@@ -388,9 +338,9 @@ export function devResponse(
 async function serveStaticFile(req: Request, absPath: string): Promise<Response | null> {
   const file = bunFile(absPath);
   if (!(await file.exists())) return null;
-  const stat = await file.stat();
-  if (!stat.isFile()) return null;
-  return devResponse(req, await file.arrayBuffer(), file.type || 'application/octet-stream');
+  const stat = await file.stat().catch(() => null);
+  if (!stat?.isFile()) return null;
+  return devResponse(req, await file.bytes(), file.type || 'application/octet-stream');
 }
 
 export function startServerWithFallback(
@@ -423,7 +373,8 @@ async function compileTypeScript(
     return { code: cachedJs.get(filePath)?.code ?? '' };
   }
 
-  if (!(await bunFile(filePath).exists())) {
+  const file = bunFile(filePath);
+  if (!(await file.exists())) {
     return { error: `File not found: ${filePath}` };
   }
 
@@ -436,7 +387,7 @@ async function compileTypeScript(
     });
 
     if (!build.success || build.outputs.length === 0) {
-      if (!(await bunFile(filePath).exists())) return { error: `File not found: ${filePath}` };
+      if (!(await file.exists())) return { error: `File not found: ${filePath}` };
       const error = build.logs.map((l) => l.message ?? String(l)).join('\n');
       return { error: error || 'Build failed' };
     }
@@ -449,7 +400,7 @@ async function compileTypeScript(
     cachedJs.set(filePath, { code, timestamp: Date.now() });
     return { code };
   } catch (err: unknown) {
-    if (!(await bunFile(filePath).exists())) return { error: `File not found: ${filePath}` };
+    if (!(await file.exists())) return { error: `File not found: ${filePath}` };
     return { error: formatBuildError(err) };
   }
 }
@@ -458,8 +409,7 @@ export function createDevServer(
   port = CONFIG.devPort,
   enableLiveReload = true,
 ): Server<unknown> {
-  const activeSockets = new Set<ServerWebSocket<unknown>>();
-  compileTailwind();
+  let server: Server<unknown>;
 
   if (enableLiveReload) {
     let debounceTimer: Timer | null = null;
@@ -484,74 +434,67 @@ export function createDevServer(
         debounceTimer = setTimeout(async () => {
           const timestamp = Date.now();
           const file = rawFile.replace(/^[./]+/, '');
-          let compileError: string | null = null;
+          const isCss = file.endsWith('.css');
+          const isJsOrTs = file.startsWith('src/') && isScriptFile(file);
+          const isHtml = file.endsWith('.html');
 
-          if (file.startsWith('src/') && isScriptFile(file)) {
+          if (isJsOrTs) {
             const targetPath = join(CONFIG.root, file);
             if (await bunFile(targetPath).exists()) {
               const res = await compileTypeScript(targetPath, true);
-              if ('error' in res && (await bunFile(targetPath).exists())) compileError = res.error;
-            }
-          }
-
-          const messages: string[] = [];
-          if (compileError) {
-            messages.push(JSON.stringify({ type: 'build-error', message: compileError }));
-          } else {
-            const isCss = file.endsWith('.css');
-            const isJsOrTs = file.startsWith('src/') && isScriptFile(file);
-            const isHtml = file.endsWith('.html');
-
-            const styleEntry = await getStyleEntrypoint();
-            const styleFile = bunFile(styleEntry.path);
-            const usesTailwind =
-              (await styleFile.exists()) && hasTailwindImport(await styleFile.text());
-
-            if (isCss || (usesTailwind && (isJsOrTs || isHtml))) {
-              try {
-                await compileTailwind(true, isCss ? join(CONFIG.root, file) : styleEntry.path);
-                messages.push(
-                  JSON.stringify({
-                    type: 'css-update',
-                    path: isCss ? `/${file}` : styleEntry.rel,
-                    timestamp,
-                  }),
-                );
-              } catch (err: unknown) {
-                messages.push(
-                  JSON.stringify({
-                    type: 'build-error',
-                    message: err instanceof Error ? err.message : String(err),
-                  }),
-                );
+              if ('error' in res && (await bunFile(targetPath).exists())) {
+                server.publish('hmr', JSON.stringify({ type: 'build-error', message: res.error }));
+                return;
               }
             }
+          }
 
-            if (isJsOrTs) {
-              messages.push(JSON.stringify({ type: 'js-update', path: `/${file}`, timestamp }));
-            } else if (isHtml) {
-              messages.push(JSON.stringify({ type: 'full-reload' }));
+          const styleEntry = await getStyleEntrypoint();
+          const styleFile = bunFile(styleEntry.path);
+          const usesTailwind =
+            (await styleFile.exists()) && hasTailwindImport(await styleFile.text());
+
+          if (isCss || (usesTailwind && (isJsOrTs || isHtml))) {
+            try {
+              await compileTailwind(true, isCss ? join(CONFIG.root, file) : styleEntry.path);
+              server.publish(
+                'hmr',
+                JSON.stringify({
+                  type: 'css-update',
+                  path: isCss ? `/${file}` : styleEntry.rel,
+                  timestamp,
+                }),
+              );
+            } catch (err: unknown) {
+              server.publish(
+                'hmr',
+                JSON.stringify({
+                  type: 'build-error',
+                  message: err instanceof Error ? err.message : String(err),
+                }),
+              );
             }
           }
 
-          for (const socket of activeSockets) {
-            try {
-              for (const msg of messages) socket.send(msg);
-            } catch (_) {}
+          if (isJsOrTs) {
+            server.publish('hmr', JSON.stringify({ type: 'js-update', path: `/${file}`, timestamp }));
+          } else if (isHtml) {
+            server.publish('hmr', JSON.stringify({ type: 'full-reload' }));
           }
         }, 40);
       });
     } catch (_) {}
   }
 
-  return startServerWithFallback({
+  server = startServerWithFallback({
     port,
     websocket: {
-      open(ws) { activeSockets.add(ws); },
-      close(ws) { activeSockets.delete(ws); },
+      open(ws) {
+        ws.subscribe('hmr');
+      },
       message() {},
     },
-    async fetch(req, server) {
+    async fetch(req) {
       const url = new URL(req.url);
       const pathname = url.pathname;
 
@@ -566,9 +509,7 @@ export function createDevServer(
         });
       }
 
-
-
-      if (pathname === '/ws-hmr' || pathname === '/ws-reload') {
+      if (pathname === '/ws-hmr') {
         if (server.upgrade(req, { data: undefined })) return undefined;
         return new Response('Upgrade failed', { status: 400 });
       }
@@ -590,9 +531,7 @@ export function createDevServer(
           return devResponse(req, css, 'text/css; charset=utf-8');
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : String(err);
-          for (const socket of activeSockets) {
-            try { socket.send(JSON.stringify({ type: 'build-error', message })); } catch (_) {}
-          }
+          server.publish('hmr', JSON.stringify({ type: 'build-error', message }));
           return new Response(message, { status: 500, headers: { 'Access-Control-Allow-Origin': '*' } });
         }
       }
@@ -608,12 +547,9 @@ export function createDevServer(
       }
 
       if (scriptFilePath) {
-
         const result = await compileTypeScript(scriptFilePath);
         if ('error' in result) {
-          for (const socket of activeSockets) {
-            try { socket.send(JSON.stringify({ type: 'build-error', message: result.error })); } catch (_) {}
-          }
+          server.publish('hmr', JSON.stringify({ type: 'build-error', message: result.error }));
           return new Response(result.error, { status: 500, headers: { 'Access-Control-Allow-Origin': '*' } });
         }
         return devResponse(req, result.code, 'application/javascript; charset=utf-8');
@@ -632,6 +568,8 @@ export function createDevServer(
       return new Response('Not Found', { status: 404, headers: { 'Access-Control-Allow-Origin': '*' } });
     },
   });
+
+  return server;
 }
 
 export async function buildProduction(options: BuildOptions = {}): Promise<BuildProductionResult> {
@@ -640,21 +578,21 @@ export async function buildProduction(options: BuildOptions = {}): Promise<Build
   const start = performance.now();
   const assetsDir = join(CONFIG.distDir, 'assets');
 
-  const rawHtmlPromise = bunFile(join(CONFIG.root, 'index.html')).text();
-  const setupPromise = (async () => {
-    await rm(CONFIG.distDir, { recursive: true, force: true });
-    await mkdir(assetsDir, { recursive: true });
-    await cp(CONFIG.publicDir, CONFIG.distDir, { recursive: true }).catch(() => {});
-  })();
+  const [rawHtml] = await Promise.all([
+    bunFile(join(CONFIG.root, 'index.html')).text(),
+    rm(CONFIG.distDir, { recursive: true, force: true }),
+  ]);
+  await Promise.all([
+    mkdir(assetsDir, { recursive: true }),
+    cp(CONFIG.publicDir, CONFIG.distDir, { recursive: true }).catch(() => {}),
+  ]);
 
-  const [rawHtml] = await Promise.all([rawHtmlPromise, setupPromise]);
   const [jsEntry, styleEntry] = await Promise.all([
     getAppEntrypoint(rawHtml),
     getStyleEntrypoint(rawHtml),
   ]);
   const cssBasename = styleEntry.file.replace(/\.css$/, '');
-  const cssFile = `${cssBasename}.${Date.now().toString(36)}.css`;
-  const cssPath = join(assetsDir, cssFile);
+  const cssPath = join(assetsDir, `${cssBasename}.${Date.now().toString(36)}.css`);
 
   const jsPromise = Bun.build({
     entrypoints: [jsEntry.path],
@@ -687,27 +625,11 @@ export async function buildProduction(options: BuildOptions = {}): Promise<Build
   }
 
   const jsFile = basename(jsBuild.outputs[0].path);
-  let html = rawHtml;
-  const basePrefix = CONFIG.base === '/' ? '/' : CONFIG.base;
-  const escapedRel = styleEntry.rel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const styleRegex = new RegExp(`<link\\s+[^>]*?href=["'](?:${escapedRel}|\\.?${escapedRel})["'][^>]*\\/?>`, 'i');
-  const replacedStyle = html.replace(styleRegex, `<style>${cssContent}</style>`);
-  html =
-    replacedStyle !== html
-      ? replacedStyle
-      : html.replace(
-          /<link\s+rel=["']stylesheet["']\s+href=["'][^"']+\.css["']\s*\/?>/i,
-          `<style>${cssContent}</style>`,
-        );
+  const html = rawHtml
+    .replace(/<link\b[^>]*?rel=["']stylesheet["'][^>]*\/?>|<link\b[^>]*?href=["'][^"']+\.css["'][^>]*\/?>/i, `<style>${cssContent}</style>`)
+    .replace(/<script\b[^>]*?src=["'][^"']+["'][^>]*>/i, `<script type="module" src="${CONFIG.base}assets/${jsFile}">`)
+    .replace('</head>', `  <link rel="modulepreload" href="${CONFIG.base}assets/${jsFile}" />\n  </head>`);
 
-  const scriptPattern = jsEntry.rel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const replacedScript = html.replace(new RegExp(scriptPattern, 'g'), `${basePrefix}assets/${jsFile}`);
-  html =
-    replacedScript !== html
-      ? replacedScript
-      : html.replace(/\/src\/[a-zA-Z0-9_.-]+\.(?:[tj]sx?|mjs)/, `${basePrefix}assets/${jsFile}`);
-
-  html = html.replace('</head>', `  <link rel="modulepreload" href="${basePrefix}assets/${jsFile}" />\n  </head>`);
   await Bun.write(join(CONFIG.distDir, 'index.html'), html);
 
   const summary = await getBuildSummary(CONFIG.distDir);
@@ -734,9 +656,8 @@ export async function getBuildSummary(
     entries.map(async (entry) => {
       try {
         const f = bunFile(join(distDir, entry));
-        const stat = await f.stat();
-        if (stat.isFile()) {
-          const bytes = new Uint8Array(await f.arrayBuffer());
+        if ((await f.stat()).isFile()) {
+          const bytes = await f.bytes();
           return {
             path: entry.replaceAll('\\', '/'),
             size: bytes.byteLength,
@@ -774,14 +695,11 @@ export function previewProduction(port = CONFIG.previewPort): Server<unknown> {
           headers['Cache-Control'] = 'public, max-age=31536000, immutable';
         }
 
-        const dotIndex = path.lastIndexOf('.');
-        const ext = dotIndex !== -1 ? path.slice(dotIndex).toLowerCase() : '';
         const acceptsGzip = req.headers.get('accept-encoding')?.includes('gzip');
-
-        if (acceptsGzip && COMPRESSIBLE_EXTS.has(ext)) {
+        if (acceptsGzip && /\.(?:html?|js|css|json|svg|txt|xml|map)$/i.test(path)) {
           let gzipped = gzipCache.get(filePath);
           if (!gzipped) {
-            gzipped = Bun.gzipSync(new Uint8Array(await file.arrayBuffer()));
+            gzipped = Bun.gzipSync(await file.bytes());
             gzipCache.set(filePath, gzipped);
           }
           headers['Content-Encoding'] = 'gzip';
