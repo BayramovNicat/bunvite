@@ -29,6 +29,7 @@
   },
   "type": "module",
   "devDependencies": {
-    "@types/bun": "^1.4.2"
+    "@types/bun": "^1.4.2",
+    "jsx-dom": "^8.1.6"
   }
 }

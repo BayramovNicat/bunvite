@@ -8,9 +8,8 @@
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "strict": true,
-    "jsx": "react",
-    "jsxFactory": "h",
-    "jsxFragmentFactory": "Fragment",
+    "jsx": "react-jsx",
+    "jsxImportSource": "jsx-dom",
     "forceConsistentCasingInFileNames": true
   },
   "include": ["src/**/*", "test/**/*", "types/**/*", "vite.ts"]
