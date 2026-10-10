@@ -546,96 +546,6 @@ export function createSassBunPlugin(mode: 'development' | 'production') {
   };
 }
 
-export function createJsxBunPlugin() {
-  return {
-    name: 'bunvite-jsx-plugin',
-    setup(build: {
-      onResolve(
-        options: { filter: RegExp },
-        callback: (args: { path: string }) => { path: string; namespace?: string } | undefined,
-      ): void;
-      onLoad(
-        options: { filter: RegExp; namespace?: string },
-        callback: (args: { path: string }) => { contents: string; loader: 'js' },
-      ): void;
-    }) {
-      try {
-        Bun.resolveSync('react', CONFIG.root);
-        return;
-      } catch {}
-
-      build.onResolve({ filter: /^react(\/.*)?$/ }, (args) => ({
-        path: args.path,
-        namespace: 'bunvite-jsx',
-      }));
-
-      build.onLoad({ filter: /.*/, namespace: 'bunvite-jsx' }, () => {
-        const contents = `
-          export const Fragment = Symbol.for('react.fragment');
-          const SVG_TAGS = new Set(['svg', 'path', 'circle', 'line', 'rect', 'polygon', 'polyline', 'ellipse', 'g', 'text', 'defs', 'use', 'clippath']);
-
-          function appendChildren(parent, children) {
-            if (children == null || children === false || children === true) return;
-            if (Array.isArray(children)) {
-              for (const child of children) appendChildren(parent, child);
-            } else if (typeof children === 'object' && 'nodeType' in children) {
-              parent.appendChild(children);
-            } else {
-              parent.appendChild(document.createTextNode(String(children)));
-            }
-          }
-
-          export function jsx(type, props, key) {
-            if (typeof type === 'function') return type({ ...props, key });
-            if (type === Fragment) {
-              if (typeof document === 'undefined') return { type, props, key };
-              const frag = document.createDocumentFragment();
-              if (props?.children !== undefined) appendChildren(frag, props.children);
-              return frag;
-            }
-            if (typeof document === 'undefined') return { type, props: key !== undefined ? { ...props, key } : props, key };
-
-            const el = typeof type === 'string' && SVG_TAGS.has(type.toLowerCase())
-              ? document.createElementNS('http://www.w3.org/2000/svg', type)
-              : document.createElement(type);
-
-            if (props) {
-              for (const [k, v] of Object.entries(props)) {
-                if (k === 'children' || k === 'key' || v == null) continue;
-                if (k === 'className' || k === 'class') {
-                  el.setAttribute('class', String(v));
-                } else if (k.startsWith('on') && typeof v === 'function') {
-                  el.addEventListener(k.slice(2).toLowerCase(), v);
-                } else if (k === 'style' && typeof v === 'object') {
-                  Object.assign(el.style, v);
-                } else if (k === 'dangerouslySetInnerHTML' && v && '__html' in v) {
-                  el.innerHTML = v.__html;
-                } else if (typeof v === 'boolean') {
-                  if (v) el.setAttribute(k, '');
-                  else el.removeAttribute(k);
-                } else {
-                  el.setAttribute(k, String(v));
-                }
-              }
-              if (props.children !== undefined) appendChildren(el, props.children);
-            }
-            return el;
-          }
-
-          export const jsxs = jsx;
-          export const jsxDEV = jsx;
-          export function createElement(type, props, ...children) {
-            const p = { ...props };
-            if (children.length > 0) p.children = children.length === 1 ? children[0] : children;
-            return jsx(type, p, props?.key);
-          }
-          export default { createElement, Fragment, jsx, jsxs, jsxDEV };
-        `;
-        return { contents, loader: 'js' };
-      });
-    },
-  };
-}
 
 export async function getAppEntrypoint(htmlSource?: string): Promise<EntrypointInfo> {
   const html = htmlSource ?? (await bunFile(join(CONFIG.root, 'index.html')).text().catch(() => ''));
@@ -815,7 +725,7 @@ async function compileTypeScript(
       sourcemap: 'inline',
       minify: false,
       define: getClientEnv('development'),
-      plugins: [createSassBunPlugin('development'), createJsxBunPlugin()],
+      plugins: [createSassBunPlugin('development')],
     });
 
     if (!build.success || build.outputs.length === 0) {
@@ -1107,7 +1017,7 @@ export async function buildProduction(options: BuildOptions = {}): Promise<Build
     target: 'browser',
     minify: true,
     define: getClientEnv('production'),
-    plugins: [createSassBunPlugin('production'), createJsxBunPlugin()],
+    plugins: [createSassBunPlugin('production')],
   }).then((res) => {
     tJsEnd = performance.now();
     return res;

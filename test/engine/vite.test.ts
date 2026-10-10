@@ -942,85 +942,6 @@ describe('jsx and tsx support', () => {
     expect(isScriptFile('index.html')).toBe(false);
   });
 
-  test('dev server compiles and serves .tsx component', async () => {
-    const tempTsxPath = join(CONFIG.root, 'test', 'temp-widget.tsx');
-    await Bun.write(
-      tempTsxPath,
-      'export const Widget = ({ name }: { name: string }) => (\n  <div className="widget-card">\n    <span>{name}</span>\n  </div>\n);',
-    );
-    try {
-      const res = await fetch(`${devBase}/test/temp-widget.tsx`);
-      expect(res.status).toBe(200);
-      expect(res.headers.get('content-type')).toContain('application/javascript');
-      const js = await res.text();
-      expect(js).toContain('Widget');
-      expect(js).toContain('widget-card');
-    } finally {
-      await bunFile(tempTsxPath)
-        .delete()
-        .catch(() => {});
-    }
-  });
-
-  test('dev server compiles and serves .jsx component', async () => {
-    const tempJsxPath = join(CONFIG.root, 'test', 'temp-banner.jsx');
-    await Bun.write(
-      tempJsxPath,
-      'export const Banner = ({ text }) => <h1 className="banner-heading">{text}</h1>;',
-    );
-    try {
-      const res = await fetch(`${devBase}/test/temp-banner.jsx`);
-      expect(res.status).toBe(200);
-      expect(res.headers.get('content-type')).toContain('application/javascript');
-      const js = await res.text();
-      expect(js).toContain('Banner');
-      expect(js).toContain('banner-heading');
-    } finally {
-      await bunFile(tempJsxPath)
-        .delete()
-        .catch(() => {});
-    }
-  });
-
-  test('dev server resolves .js request to .tsx file when .js is absent', async () => {
-    const tempTsxPath = join(CONFIG.root, 'test', 'temp-fallback-component.tsx');
-    await Bun.write(
-      tempTsxPath,
-      'export const FallbackItem = () => <p className="fallback-text">Resolved TSX</p>;',
-    );
-    try {
-      const res = await fetch(`${devBase}/test/temp-fallback-component.js`);
-      expect(res.status).toBe(200);
-      expect(res.headers.get('content-type')).toContain('application/javascript');
-      const js = await res.text();
-      expect(js).toContain('FallbackItem');
-      expect(js).toContain('fallback-text');
-    } finally {
-      await bunFile(tempTsxPath)
-        .delete()
-        .catch(() => {});
-    }
-  });
-
-  test('dev server preserves state in .tsx component via HMR transform', async () => {
-    const tempTsxPath = join(CONFIG.root, 'test', 'temp-state-widget.tsx');
-    await Bun.write(
-      tempTsxPath,
-      'const state = { count: 99 };\nexport const Counter = () => <button>{state.count}</button>;',
-    );
-    try {
-      const res = await fetch(`${devBase}/test/temp-state-widget.tsx`);
-      expect(res.status).toBe(200);
-      const js = await res.text();
-      expect(js).toContain('window.__hmr_state__ ??=');
-      expect(js).toContain('count: 99');
-    } finally {
-      await bunFile(tempTsxPath)
-        .delete()
-        .catch(() => {});
-    }
-  });
-
   test('resolves .tsx and .jsx script entrypoints from HTML', async () => {
     const tsxHtml = `
       <html>
@@ -1045,39 +966,5 @@ describe('jsx and tsx support', () => {
     const jsxEntry = await getAppEntrypoint(jsxHtml);
     expect(jsxEntry.file).toBe('main.jsx');
     expect(jsxEntry.rel).toBe('/src/main.jsx');
-  });
-
-  test('production build compiles and bundles .tsx entrypoint', async () => {
-    const origHtml = await bunFile(join(CONFIG.root, 'index.html')).text();
-    const tsxPath = join(CONFIG.root, 'test', 'custom-test-entry.tsx');
-    await Bun.write(
-      tsxPath,
-      'export const App = () => <div className="prod-tsx-root">Production TSX Ready</div>;\nconsole.log(App());',
-    );
-    const testHtml = origHtml.replace(
-      /\/src\/app\.(?:tsx|jsx|ts|js)/,
-      '/test/custom-test-entry.tsx',
-    );
-    await Bun.write(join(CONFIG.root, 'index.html'), testHtml);
-
-    try {
-      const res = await buildProduction({ silent: true });
-      expect(res.summary.length).toBeGreaterThan(0);
-      const distIndex = bunFile(join(CONFIG.distDir, 'index.html'));
-      expect(await distIndex.exists()).toBe(true);
-      const builtHtml = await distIndex.text();
-      expect(builtHtml).toMatch(/\/assets\/custom-test-entry\.[a-z0-9]+\.js/);
-
-      const match = builtHtml.match(/\/assets\/(custom-test-entry\.[a-z0-9]+\.js)/);
-      expect(match).not.toBeNull();
-      const bundledJs = await bunFile(join(CONFIG.distDir, 'assets', match?.[1] ?? '')).text();
-      expect(bundledJs).toContain('Production TSX Ready');
-    } finally {
-      await Bun.write(join(CONFIG.root, 'index.html'), origHtml);
-      await bunFile(tsxPath)
-        .delete()
-        .catch(() => {});
-      await buildProduction({ silent: true });
-    }
   });
 });
