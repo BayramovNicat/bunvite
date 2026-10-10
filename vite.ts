@@ -177,11 +177,19 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
 </script>
 `;
 
+let cachedTailwindBase: string[] | null = null;
+
 export function getTailwindCommand(args: string[]): string[] {
-  const globalBin = Bun.which('tailwindcss');
-  if (globalBin) return [globalBin, ...args];
-  const localCli = join(CONFIG.root, 'node_modules', '@tailwindcss', 'cli', 'dist', 'index.mjs');
-  return existsSync(localCli) ? ['bun', localCli, ...args] : ['bun', 'x', '@tailwindcss/cli', ...args];
+  if (!cachedTailwindBase) {
+    const globalBin = Bun.which('tailwindcss');
+    if (globalBin) {
+      cachedTailwindBase = [globalBin];
+    } else {
+      const localCli = join(CONFIG.root, 'node_modules', '@tailwindcss', 'cli', 'dist', 'index.mjs');
+      cachedTailwindBase = existsSync(localCli) ? ['bun', localCli] : ['bun', 'x', '@tailwindcss/cli'];
+    }
+  }
+  return [...cachedTailwindBase, ...args];
 }
 
 export const isScriptFile = (filePath: string): boolean => /\.(?:[tj]sx?|mjs)$/i.test(filePath);
@@ -468,7 +476,7 @@ async function compileTypeScript(
 
     let code = await build.outputs[0].text();
     code = code.replace(
-      /(?:const|let|var) state = (\{[^;]+\});/,
+      /^(?:export\s+)?(?:const|let|var)\s+state\s*=\s*(\{[\s\S]*?\});/m,
       'var state = (window.__hmr_state__ ??= $1);',
     );
     cachedJs.set(filePath, { code, timestamp: Date.now() });
