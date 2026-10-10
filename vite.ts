@@ -62,25 +62,15 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
       document.body.appendChild(overlay);
     };
 
-    window.addEventListener("error", (e) => {
-      const msg = e.error?.stack || e.error?.message || e.message;
-      if (msg) showOverlay(msg, "Runtime Error");
-    });
-
-    window.addEventListener("unhandledrejection", (e) => {
-      const msg = e.reason?.stack || e.reason?.message || String(e.reason);
-      if (msg) showOverlay(msg, "Unhandled Promise Rejection");
-    });
+    window.addEventListener("error", (e) => showOverlay(e.error?.stack || e.error?.message || e.message, "Runtime Error"));
+    window.addEventListener("unhandledrejection", (e) => showOverlay(e.reason?.stack || e.reason?.message || String(e.reason), "Unhandled Promise Rejection"));
 
     const connect = () => {
       ws = new WebSocket((location.protocol === "https:" ? "wss:" : "ws:") + "//" + location.host + "/ws-hmr");
       ws.onmessage = async (e) => {
         try {
           const payload = JSON.parse(e.data);
-          if (payload.type === "build-error") {
-            showOverlay(payload.message, "BunVite Build Error");
-            return;
-          }
+          if (payload.type === "build-error") return showOverlay(payload.message, "BunVite Build Error");
           dismissOverlay();
 
           if (payload.type === "css-update") {
@@ -105,9 +95,7 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
             }
           }
 
-          if (payload.type === "full-reload") {
-            location.reload();
-          }
+          if (payload.type === "full-reload") location.reload();
         } catch (err) {
           console.error("[HMR] Failed to process message:", err);
         }
@@ -258,7 +246,7 @@ export async function getStyleEntrypoint(htmlSource?: string): Promise<Entrypoin
 }
 
 export function formatBuildError(err: unknown): string {
-  const errors = (
+  const list = (
     err as {
       errors?: Array<{
         message?: string;
@@ -266,16 +254,13 @@ export function formatBuildError(err: unknown): string {
       }>;
     }
   )?.errors;
-  if (Array.isArray(errors) && errors.length > 0) {
-    return errors
-      .map((item) => {
-        const pos = item.position;
-        if (pos?.lineText !== undefined) {
-          const col = Math.max(1, pos.column ?? 1);
-          return `${pos.file ?? 'unknown'}:${pos.line}:${pos.column}\n\n  ${pos.line} | ${pos.lineText}\n    | ${' '.repeat(col - 1)}^\n\n${item.message ?? 'Build error'}`;
-        }
-        return item.message ?? String(item);
-      })
+  if (list?.length) {
+    return list
+      .map((e) =>
+        e.position?.lineText !== undefined
+          ? `${e.position.file ?? 'unknown'}:${e.position.line}:${e.position.column}\n\n  ${e.position.line} | ${e.position.lineText}\n    | ${' '.repeat(Math.max(0, (e.position.column ?? 1) - 1))}^\n\n${e.message ?? 'Build error'}`
+          : e.message ?? String(e),
+      )
       .join('\n\n---\n\n');
   }
   return err instanceof Error ? err.message : String(err);
@@ -293,27 +278,14 @@ export function devResponse(
   extraHeaders: Record<string, string> = {},
 ): Response {
   const etag = `"${Bun.hash(content).toString(16)}"`;
-  const baseHeaders: Record<string, string> = {
-    'Access-Control-Allow-Origin': '*',
-    'Cache-Control': 'no-cache',
-    ETag: etag,
-    ...extraHeaders,
-  };
-
-  if (req.headers.get('if-none-match') === etag) {
-    return new Response(null, { status: 304, headers: baseHeaders });
-  }
-
-  return new Response(content as BodyInit, {
-    headers: { 'Content-Type': contentType, ...baseHeaders },
-  });
+  const headers = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache', ETag: etag, ...extraHeaders };
+  if (req.headers.get('if-none-match') === etag) return new Response(null, { status: 304, headers });
+  return new Response(content as BodyInit, { headers: { 'Content-Type': contentType, ...headers } });
 }
 
 async function serveStaticFile(req: Request, absPath: string): Promise<Response | null> {
   const file = bunFile(absPath);
-  if (!(await file.exists())) return null;
-  const stat = await file.stat().catch(() => null);
-  if (!stat?.isFile()) return null;
+  if (!(await file.exists()) || !(await file.stat().catch(() => null))?.isFile()) return null;
   return devResponse(req, await file.bytes(), file.type || 'application/octet-stream');
 }
 
@@ -644,10 +616,9 @@ export function previewProduction(port = CONFIG.previewPort): Server<unknown> {
       const filePath = join(CONFIG.distDir, path);
       const file = bunFile(filePath);
       if (await file.exists()) {
-        const headers: Record<string, string> = {};
-        if (path.startsWith('/assets/')) {
-          headers['Cache-Control'] = 'public, max-age=31536000, immutable';
-        }
+        const headers: Record<string, string> = path.startsWith('/assets/')
+          ? { 'Cache-Control': 'public, max-age=31536000, immutable' }
+          : {};
 
         const acceptsGzip = req.headers.get('accept-encoding')?.includes('gzip');
         if (acceptsGzip && /\.(?:html?|js|css|json|svg|txt|xml|map)$/i.test(path)) {
@@ -686,14 +657,8 @@ if (import.meta.main) {
   if (cmd === 'dev') {
     const server = createDevServer(CONFIG.devPort, true);
     const port = server.port ?? CONFIG.devPort;
-    if (port !== CONFIG.devPort) {
-      console.log(`\n  ℹ Port ${CONFIG.devPort} is in use, using ${port} instead`);
-    }
-    const networkUrl = getNetworkUrl(port);
-    console.log(`\n  ⚡ BunVite dev server running at:`);
-    console.log(`     Local:   http://localhost:${port}/`);
-    if (networkUrl) console.log(`     Network: ${networkUrl}`);
-    console.log();
+    const net = getNetworkUrl(port);
+    console.log(`\n  ⚡ BunVite dev server running at:\n     Local:   http://localhost:${port}/${net ? `\n     Network: ${net}` : ''}\n`);
   } else if (cmd === 'build') {
     await buildProduction();
   } else if (cmd === 'preview') {
