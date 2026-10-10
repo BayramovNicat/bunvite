@@ -838,14 +838,6 @@ export function previewProduction(port = CONFIG.previewPort): Server<unknown> {
   return server;
 }
 
-export function openBrowser(url: string) {
-  const osCmd =
-    process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer' : 'xdg-open';
-  try {
-    Bun.spawn([osCmd, url]).unref();
-  } catch (_) {}
-}
-
 export function getNetworkUrl(port: number): string | null {
   for (const addrs of Object.values(networkInterfaces())) {
     const match = addrs?.find((a) => a.family === 'IPv4' && !a.internal);
@@ -857,8 +849,6 @@ export function getNetworkUrl(port: number): string | null {
 const cmd = process.argv[2] || 'dev';
 
 if (import.meta.main) {
-  const isOpen = process.argv.includes('--open') || process.argv.includes('-o');
-
   if (cmd === 'dev') {
     const server = createDevServer(CONFIG.devPort, true);
     const port = server.port ?? CONFIG.devPort;
@@ -870,13 +860,11 @@ if (import.meta.main) {
     console.log(`     Local:   http://localhost:${port}/`);
     if (networkUrl) console.log(`     Network: ${networkUrl}`);
     console.log();
-    if (isOpen) openBrowser(`http://localhost:${port}/`);
   } else if (cmd === 'build') {
     await buildProduction();
   } else if (cmd === 'preview') {
-    const server = previewProduction(CONFIG.previewPort);
-    if (isOpen) openBrowser(`http://localhost:${server.port ?? CONFIG.previewPort}/`);
+    previewProduction(CONFIG.previewPort);
   } else {
-    console.log(`Unknown command: "${cmd}". Usage: bun vite.ts [dev|build|preview] [--open]`);
+    console.log(`Unknown command: "${cmd}". Usage: bun vite.ts [dev|build|preview]`);
   }
 }
