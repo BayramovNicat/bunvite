@@ -40,8 +40,7 @@ let cachedTailwindBase: string[] | null = null;
 const HMR_CLIENT_SCRIPT = /*html*/ `
 <script>
   (() => {
-    let ws;
-    let overlay = null;
+    let ws, overlay = null;
     window.__hmr__ = { onUpdate() {} };
 
     const dismissOverlay = () => {
@@ -61,7 +60,7 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
         if (e.target === overlay) dismissOverlay();
       };
       overlay.innerHTML = '<div style="background:#18181b;border:1px solid #ef4444;border-radius:12px;max-width:800px;width:100%;max-height:85vh;display:flex;flex-direction:column;overflow:hidden"><div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#27272a;border-bottom:1px solid #3f3f46"><div style="display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:9999px;background:#ef4444"></span><span style="font-family:ui-monospace,monospace;font-size:12px;font-weight:600;color:#f43f5e;text-transform:uppercase">' + title + '</span></div><div style="display:flex;gap:8px"><button type="button" id="hmr-reload-btn" onclick="location.reload()" style="background:#3f3f46;border:none;color:#e4e4e7;border-radius:6px;font-size:12px;padding:4px 10px;cursor:pointer">Reload</button><button type="button" id="hmr-reset-btn" onclick="delete window.__hmr_state__;location.reload()" style="background:#4338ca;border:none;color:#fff;border-radius:6px;font-size:12px;padding:4px 10px;cursor:pointer">Reset & Reload</button><button type="button" id="hmr-close-btn" onclick="this.closest(\\'[style*=fixed]\\').remove()" style="background:none;border:none;color:#a1a1aa;cursor:pointer;font-size:18px;line-height:1;padding:4px" title="Close (Esc)">&times;</button></div></div><div style="padding:20px;overflow-y:auto"><pre style="margin:0;color:#fca5a5;font-family:ui-monospace,monospace;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word"></pre></div></div>';
-      (overlay.querySelector("pre")).textContent = message;
+      overlay.querySelector("pre").textContent = message;
       document.body.appendChild(overlay);
     };
 
@@ -125,13 +124,9 @@ export function getTailwindCommand(args: string[]): string[] {
 
 export const isScriptFile = (filePath: string): boolean => /\.(?:[tj]sx?|mjs)$/i.test(filePath);
 
-function resolveCandidate(basePath: string, exts: readonly string[] = SCRIPT_EXTS): string | null {
+function resolveCandidate(basePath: string): string | null {
   const stripped = basePath.replace(/\.(?:[tj]sx?|mjs)$/, '');
-  for (const ext of exts) {
-    const candidate = `${stripped}${ext}`;
-    if (existsSync(candidate)) return candidate;
-  }
-  return null;
+  return SCRIPT_EXTS.map((ext) => `${stripped}${ext}`).find(existsSync) ?? null;
 }
 
 export function hasTailwindImport(cssText: string): boolean {
@@ -153,41 +148,37 @@ export async function compileTailwindCss(options: {
   }
 
   const cssText = await cssFile.text();
+  let code: string;
+
   if (!hasTailwindImport(cssText)) {
-    let output = cssText;
-    if (options.minify) {
-      output = output
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/\s+/g, ' ')
-        .replace(/\s*([{}:;,])\s*/g, '$1')
-        .trim();
-    }
-    if (options.outputPath) await Bun.write(options.outputPath, output);
-    return output;
+    code = options.minify
+      ? cssText.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ').replace(/\s*([{}:;,])\s*/g, '$1').trim()
+      : cssText;
+  } else {
+    const twCmd = getTailwindCommand([
+      '-i',
+      inputPath,
+      ...(options.minify ? ['--minify'] : []),
+      '--cwd',
+      CONFIG.root,
+      ...(options.silent ? ['--silent'] : []),
+    ]);
+
+    const env = {
+      ...process.env,
+      NODE_PATH: [
+        join(CONFIG.root, 'node_modules'),
+        join(process.env.HOME || '', '.bun', 'install', 'global', 'node_modules'),
+        process.env.NODE_PATH,
+      ]
+        .filter(Boolean)
+        .join(':'),
+    };
+
+    const proc = Bun.spawn(twCmd, { cwd: CONFIG.root, env, stdout: 'pipe', stderr: 'pipe' });
+    code = await new Response(proc.stdout).text();
   }
 
-  const twCmd = getTailwindCommand([
-    '-i',
-    inputPath,
-    ...(options.minify ? ['--minify'] : []),
-    '--cwd',
-    CONFIG.root,
-    ...(options.silent ? ['--silent'] : []),
-  ]);
-
-  const twEnv = {
-    ...process.env,
-    NODE_PATH: [
-      join(CONFIG.root, 'node_modules'),
-      join(process.env.HOME || '', '.bun', 'install', 'global', 'node_modules'),
-      process.env.NODE_PATH,
-    ]
-      .filter(Boolean)
-      .join(':'),
-  };
-
-  const proc = Bun.spawn(twCmd, { cwd: CONFIG.root, env: twEnv, stdout: 'pipe', stderr: 'pipe' });
-  const code = await new Response(proc.stdout).text();
   if (options.outputPath) await Bun.write(options.outputPath, code);
   return code;
 }
@@ -202,21 +193,18 @@ async function compileTailwind(force = false, inputPath?: string): Promise<strin
 }
 
 function resolveEntry(rawSrc: string | null, fallbackPath: string): EntrypointInfo {
-  if (rawSrc) {
-    const clean = rawSrc.replace(/^[./]+/, '');
-    const abs = join(CONFIG.root, clean);
-    const target = existsSync(abs) ? abs : resolveCandidate(abs) ?? abs;
-    const rel = rawSrc.startsWith('/') ? rawSrc : `/${clean}`;
-    const targetRel = target !== abs ? rel.replace(/\.(?:[tj]sx?|mjs)$/, target.slice(target.lastIndexOf('.'))) : rel;
-    return { file: basename(target), path: target, rel: targetRel };
-  }
-  const target = resolveCandidate(fallbackPath) ?? fallbackPath;
-  return { file: basename(target), path: target, rel: `/src/${basename(target)}` };
+  const base = rawSrc ? join(CONFIG.root, rawSrc.replace(/^[./]+/, '')) : fallbackPath;
+  const target = existsSync(base) ? base : resolveCandidate(base) ?? base;
+  return {
+    file: basename(target),
+    path: target,
+    rel: `/${relative(CONFIG.root, target).replaceAll('\\', '/')}`,
+  };
 }
 
 export async function getAppEntrypoint(htmlSource?: string): Promise<EntrypointInfo> {
   const html = htmlSource ?? (await Bun.file(join(CONFIG.root, 'index.html')).text().catch(() => ''));
-  const match = html.match(/<script\b[^>]*?\bsrc=["']([^"']+\.(?:[tj]sx?|mjs))["'][^>]*>/i);
+  const match = html.match(/<script\b[^>]*?\bsrc=["']([^"']+\.(?:[tj]sx?|mjs))["']/i);
   return resolveEntry(match?.[1] ?? null, join(CONFIG.srcDir, 'app.ts'));
 }
 
@@ -234,13 +222,7 @@ export async function getStyleEntrypoint(htmlSource?: string): Promise<Entrypoin
       const importMatch = scriptCode.match(/(?:^|\n)\s*import\s+['"]([^'"]+\.css)['"]/);
       if (importMatch?.[1]) {
         const resolved = join(dirname(appEntry.path), importMatch[1]);
-        if (existsSync(resolved)) {
-          return {
-            file: basename(resolved),
-            path: resolved,
-            rel: `/${relative(CONFIG.root, resolved).replace(/\\/g, '/')}`,
-          };
-        }
+        if (existsSync(resolved)) return resolveEntry(null, resolved);
       }
     }
   }
@@ -268,11 +250,6 @@ export function formatBuildError(err: unknown): string {
       .join('\n\n---\n\n');
   }
   return err instanceof Error ? err.message : String(err);
-}
-
-async function renderDevHtml(enableLiveReload: boolean): Promise<string> {
-  const html = await Bun.file(join(CONFIG.root, 'index.html')).text();
-  return enableLiveReload ? html.replace('</body>', `${HMR_CLIENT_SCRIPT}</body>`) : html;
 }
 
 export function devResponse(
@@ -319,7 +296,7 @@ export function createCssPlugin(mode: 'dev' | 'prod'): BunPlugin {
     setup(builder) {
       builder.onLoad({ filter: /\.css$/ }, async (args) => {
         if (mode === 'prod') return { contents: '', loader: 'js' };
-        const relPath = `/${relative(CONFIG.root, args.path).replace(/\\/g, '/')}`;
+        const relPath = `/${relative(CONFIG.root, args.path).replaceAll('\\', '/')}`;
         const js = `if (typeof document !== 'undefined') {
   const href = ${JSON.stringify(relPath)};
   if (!document.querySelector('link[href*="' + href + '"]')) {
@@ -370,10 +347,7 @@ async function compileTypeScript(
 function resolveScriptPath(cleanPath: string): string | null {
   const abs = join(CONFIG.root, cleanPath);
   if (existsSync(abs)) return isScriptFile(cleanPath) ? abs : null;
-  if (cleanPath.startsWith('src/') || isScriptFile(cleanPath)) {
-    return resolveCandidate(abs);
-  }
-  return null;
+  return cleanPath.startsWith('src/') || isScriptFile(cleanPath) ? resolveCandidate(abs) : null;
 }
 
 export function createDevServer(
@@ -440,6 +414,11 @@ export function createDevServer(
     } catch (_) {}
   }
 
+  const renderHtml = async () => {
+    const html = await Bun.file(join(CONFIG.root, 'index.html')).text();
+    return enableLiveReload ? html.replace('</body>', `${HMR_CLIENT_SCRIPT}</body>`) : html;
+  };
+
   server = startServerWithFallback({
     port,
     websocket: {
@@ -449,8 +428,6 @@ export function createDevServer(
       message() {},
     },
     async fetch(req) {
-      const { pathname } = new URL(req.url);
-
       if (req.method === 'OPTIONS') {
         return new Response(null, {
           status: 204,
@@ -462,12 +439,14 @@ export function createDevServer(
         });
       }
 
+      const { pathname } = new URL(req.url);
+
       if (pathname === '/ws-hmr') {
         return server.upgrade(req, { data: undefined }) ? undefined : new Response('Upgrade failed', { status: 400 });
       }
 
       if (pathname === '/' || pathname === '/index.html') {
-        return devResponse(req, await renderDevHtml(enableLiveReload), 'text/html; charset=utf-8');
+        return devResponse(req, await renderHtml(), 'text/html; charset=utf-8');
       }
 
       const cleanPath = pathname.replace(/^\/+/, '');
@@ -494,7 +473,7 @@ export function createDevServer(
       }
 
       if (req.headers.get('accept')?.includes('text/html')) {
-        return devResponse(req, await renderDevHtml(enableLiveReload), 'text/html; charset=utf-8');
+        return devResponse(req, await renderHtml(), 'text/html; charset=utf-8');
       }
 
       return new Response('Not Found', { status: 404, headers: CORS_HEADERS });
@@ -557,7 +536,7 @@ export async function buildProduction(options: BuildOptions = {}): Promise<Build
   const hasLinkTag = /<link\b[^>]*?(?:rel=["']stylesheet["']|href=["'][^"']+\.css["'])/i.test(rawHtml);
   const html = (
     hasLinkTag
-      ? rawHtml.replace(/<link\b[^>]*?rel=["']stylesheet["'][^>]*\/?>|<link\b[^>]*?href=["'][^"']+\.css["'][^>]*\/?>/i, styleTag)
+      ? rawHtml.replace(/<link\b[^>]*?(?:rel=["']stylesheet["']|href=["'][^"']+\.css["'])[^>]*\/?>/i, styleTag)
       : rawHtml.replace('</head>', `  ${styleTag}\n  </head>`)
   )
     .replace(/<script\b[^>]*?src=["'][^"']+["'][^>]*>/i, `<script type="module" src="${CONFIG.base}assets/${jsFile}">`)
