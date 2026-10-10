@@ -15,6 +15,7 @@ export const CONFIG = {
 };
 
 const IGNORED_WATCH_PATTERN = /^(?:node_modules|dist|test|\.git|\.cache)(?:\/|$)|(?:^|[/\\])(?:temp-|tmp-)|\.(?:swp|tmp)$|~$/;
+const SCRIPT_EXTS = ['.tsx', '.ts', '.jsx', '.js'] as const;
 
 export interface EntrypointInfo {
   file: string;
@@ -32,7 +33,8 @@ export interface BuildOptions {
 }
 
 let cachedCss: { code: string; path?: string } | null = null;
-const cachedJs = new Map<string, { code: string; timestamp: number }>();
+const cachedJs = new Map<string, string>();
+let cachedTailwindBase: string[] | null = null;
 
 const HMR_CLIENT_SCRIPT = /*html*/ `
 <script>
@@ -107,8 +109,6 @@ const HMR_CLIENT_SCRIPT = /*html*/ `
 </script>
 `;
 
-let cachedTailwindBase: string[] | null = null;
-
 export function getTailwindCommand(args: string[]): string[] {
   if (!cachedTailwindBase) {
     const globalBin = Bun.which('tailwindcss');
@@ -124,8 +124,8 @@ export function getTailwindCommand(args: string[]): string[] {
 
 export const isScriptFile = (filePath: string): boolean => /\.(?:[tj]sx?|mjs)$/i.test(filePath);
 
-function resolveCandidate(basePath: string, extensions: readonly string[]): string | null {
-  for (const ext of extensions) {
+function resolveCandidate(basePath: string, exts: readonly string[] = SCRIPT_EXTS): string | null {
+  for (const ext of exts) {
     const candidate = `${basePath}${ext}`;
     if (existsSync(candidate)) return candidate;
   }
@@ -203,45 +203,37 @@ async function compileTailwind(force = false, inputPath?: string): Promise<strin
 function resolveEntry(
   rawSrc: string | null,
   fallbackPath: string,
-  candidateExts?: readonly string[],
+  candidateExts: readonly string[] = SCRIPT_EXTS,
 ): EntrypointInfo {
   if (rawSrc) {
     const clean = rawSrc.replace(/^[./]+/, '');
     const abs = join(CONFIG.root, clean);
     const rel = rawSrc.startsWith('/') ? rawSrc : `/${clean}`;
     if (existsSync(abs)) return { file: basename(clean), path: abs, rel };
-    if (candidateExts) {
-      const candidate = resolveCandidate(abs.replace(/\.(?:[tj]sx?|mjs)$/, ''), candidateExts);
-      if (candidate) {
-        const ext = candidate.slice(candidate.lastIndexOf('.'));
-        return { file: basename(candidate), path: candidate, rel: rel.replace(/\.(?:[tj]sx?|mjs)$/, ext) };
-      }
+    const candidate = resolveCandidate(abs.replace(/\.(?:[tj]sx?|mjs)$/, ''), candidateExts);
+    if (candidate) {
+      const ext = candidate.slice(candidate.lastIndexOf('.'));
+      return { file: basename(candidate), path: candidate, rel: rel.replace(/\.(?:[tj]sx?|mjs)$/, ext) };
     }
     return { file: basename(clean), path: abs, rel };
   }
-  const candidate = candidateExts
-    ? resolveCandidate(fallbackPath.replace(/\.(?:[tj]sx?|mjs)$/, ''), candidateExts)
-    : null;
-  const target = candidate ?? fallbackPath;
+  const target = resolveCandidate(fallbackPath.replace(/\.(?:[tj]sx?|mjs)$/, ''), candidateExts) ?? fallbackPath;
   return { file: basename(target), path: target, rel: `/src/${basename(target)}` };
 }
 
 export async function getAppEntrypoint(htmlSource?: string): Promise<EntrypointInfo> {
   const html = htmlSource ?? (await bunFile(join(CONFIG.root, 'index.html')).text().catch(() => ''));
   const match = html.match(/<script\b[^>]*?\bsrc=["']([^"']+\.(?:[tj]sx?|mjs))["'][^>]*>/i);
-  return resolveEntry(match?.[1] ?? null, join(CONFIG.srcDir, 'app.ts'), ['.tsx', '.ts', '.jsx', '.js']);
+  return resolveEntry(match?.[1] ?? null, join(CONFIG.srcDir, 'app.ts'));
 }
 
 export async function getStyleEntrypoint(htmlSource?: string): Promise<EntrypointInfo> {
   const html = htmlSource ?? (await bunFile(join(CONFIG.root, 'index.html')).text().catch(() => ''));
-  const matches = html.matchAll(/<link\b[^>]*?\bhref=["']([^"']+\.css)["'][^>]*>/gi);
-  let href: string | null = null;
-  for (const m of matches) {
-    if (/rel=["']stylesheet["']/i.test(m[0])) {
-      href = m[1];
-      break;
-    }
-  }
+  const linkMatch = html.match(
+    /<link\b[^>]*?\b(?:rel=["']stylesheet["'][^>]*?href=["']([^"']+\.css)["']|href=["']([^"']+\.css)["'][^>]*?rel=["']stylesheet["'])/i,
+  );
+  const href = linkMatch?.[1] ?? linkMatch?.[2] ?? null;
+
   if (!href) {
     const appEntry = await getAppEntrypoint(html);
     if (existsSync(appEntry.path)) {
@@ -250,8 +242,11 @@ export async function getStyleEntrypoint(htmlSource?: string): Promise<Entrypoin
       if (importMatch?.[1]) {
         const resolved = join(dirname(appEntry.path), importMatch[1]);
         if (existsSync(resolved)) {
-          const rel = `/${relative(CONFIG.root, resolved).replace(/\\/g, '/')}`;
-          return { file: basename(resolved), path: resolved, rel };
+          return {
+            file: basename(resolved),
+            path: resolved,
+            rel: `/${relative(CONFIG.root, resolved).replace(/\\/g, '/')}`,
+          };
         }
       }
     }
@@ -268,13 +263,15 @@ export function formatBuildError(err: unknown): string {
       }>;
     }
   )?.errors;
+
   if (list?.length) {
     return list
-      .map((e) =>
-        e.position?.lineText !== undefined
-          ? `${e.position.file ?? 'unknown'}:${e.position.line}:${e.position.column}\n\n  ${e.position.line} | ${e.position.lineText}\n    | ${' '.repeat(Math.max(0, (e.position.column ?? 1) - 1))}^\n\n${e.message ?? 'Build error'}`
-          : e.message ?? String(e),
-      )
+      .map((e) => {
+        const pos = e.position;
+        if (!pos || pos.lineText === undefined) return e.message ?? String(e);
+        const col = Math.max(0, (pos.column ?? 1) - 1);
+        return `${pos.file ?? 'unknown'}:${pos.line}:${pos.column}\n\n  ${pos.line} | ${pos.lineText}\n    | ${' '.repeat(col)}^\n\n${e.message ?? 'Build error'}`;
+      })
       .join('\n\n---\n\n');
   }
   return err instanceof Error ? err.message : String(err);
@@ -299,7 +296,7 @@ export function devResponse(
 
 async function serveStaticFile(req: Request, absPath: string): Promise<Response | null> {
   const file = bunFile(absPath);
-  if (!(await file.exists()) || !(await file.stat().catch(() => null))?.isFile()) return null;
+  if (!(await file.stat().catch(() => null))?.isFile()) return null;
   return devResponse(req, await file.bytes(), file.type || 'application/octet-stream');
 }
 
@@ -314,10 +311,10 @@ export function startServerWithFallback(
     try {
       return serve({ ...options, port: initialPort + attempt } as Parameters<typeof serve>[0]);
     } catch (err: unknown) {
-      const isPortInUse =
+      const inUse =
         err instanceof Error &&
         (('code' in err && (err as { code: string }).code === 'EADDRINUSE') || err.message.includes('in use'));
-      if (!isPortInUse || attempt === maxAttempts - 1) throw err;
+      if (!inUse || attempt === maxAttempts - 1) throw err;
     }
   }
   throw new Error(`Could not find an available port after ${maxAttempts} attempts starting from ${initialPort}`);
@@ -328,9 +325,7 @@ export function createCssPlugin(mode: 'dev' | 'prod'): BunPlugin {
     name: 'bunvite-css-loader',
     setup(builder) {
       builder.onLoad({ filter: /\.css$/ }, async (args) => {
-        if (mode === 'prod') {
-          return { contents: '', loader: 'js' };
-        }
+        if (mode === 'prod') return { contents: '', loader: 'js' };
         const relPath = `/${relative(CONFIG.root, args.path).replace(/\\/g, '/')}`;
         const js = `if (typeof document !== 'undefined') {
   const href = ${JSON.stringify(relPath)};
@@ -351,12 +346,8 @@ async function compileTypeScript(
   filePath: string,
   force = false,
 ): Promise<{ code: string } | { error: string }> {
-  if (!force && cachedJs.has(filePath)) {
-    return { code: cachedJs.get(filePath)?.code ?? '' };
-  }
-  if (!existsSync(filePath)) {
-    return { error: `File not found: ${filePath}` };
-  }
+  if (!force && cachedJs.has(filePath)) return { code: cachedJs.get(filePath)! };
+  if (!existsSync(filePath)) return { error: `File not found: ${filePath}` };
 
   try {
     const build = await Bun.build({
@@ -368,7 +359,6 @@ async function compileTypeScript(
     });
 
     if (!build.success || build.outputs.length === 0) {
-      if (!existsSync(filePath)) return { error: `File not found: ${filePath}` };
       return { error: build.logs.map((l) => l.message ?? String(l)).join('\n') || 'Build failed' };
     }
 
@@ -377,7 +367,7 @@ async function compileTypeScript(
       /^(?:export\s+)?(?:const|let|var)\s+state\s*=\s*(\{[\s\S]*?\});/m,
       'var state = (window.__hmr_state__ ??= $1);',
     );
-    cachedJs.set(filePath, { code, timestamp: Date.now() });
+    cachedJs.set(filePath, code);
     return { code };
   } catch (err: unknown) {
     return { error: existsSync(filePath) ? formatBuildError(err) : `File not found: ${filePath}` };
@@ -389,6 +379,7 @@ export function createDevServer(
   enableLiveReload = true,
 ): Server<unknown> {
   let server: Server<unknown>;
+  const notify = (data: object) => server.publish('hmr', JSON.stringify(data));
 
   if (enableLiveReload) {
     let debounceTimer: Timer | null = null;
@@ -412,7 +403,7 @@ export function createDevServer(
             if (await bunFile(targetPath).exists()) {
               const res = await compileTypeScript(targetPath, true);
               if ('error' in res && (await bunFile(targetPath).exists())) {
-                server.publish('hmr', JSON.stringify({ type: 'build-error', message: res.error }));
+                notify({ type: 'build-error', message: res.error });
                 return;
               }
             }
@@ -426,30 +417,21 @@ export function createDevServer(
           if (isCss || (usesTailwind && (isJsOrTs || isHtml))) {
             try {
               await compileTailwind(true, isCss ? join(CONFIG.root, file) : styleEntry.path);
-              server.publish(
-                'hmr',
-                JSON.stringify({
-                  type: 'css-update',
-                  path: isCss ? `/${file}` : styleEntry.rel,
-                  timestamp,
-                }),
-              );
+              notify({
+                type: 'css-update',
+                path: isCss ? `/${file}` : styleEntry.rel,
+                timestamp,
+              });
             } catch (err: unknown) {
-              server.publish(
-                'hmr',
-                JSON.stringify({
-                  type: 'build-error',
-                  message: err instanceof Error ? err.message : String(err),
-                }),
-              );
+              notify({
+                type: 'build-error',
+                message: err instanceof Error ? err.message : String(err),
+              });
             }
           }
 
-          if (isJsOrTs) {
-            server.publish('hmr', JSON.stringify({ type: 'js-update', path: `/${file}`, timestamp }));
-          } else if (isHtml) {
-            server.publish('hmr', JSON.stringify({ type: 'full-reload' }));
-          }
+          if (isJsOrTs) notify({ type: 'js-update', path: `/${file}`, timestamp });
+          else if (isHtml) notify({ type: 'full-reload' });
         }, 40);
       });
     } catch (_) {}
@@ -464,8 +446,7 @@ export function createDevServer(
       message() {},
     },
     async fetch(req) {
-      const url = new URL(req.url);
-      const pathname = url.pathname;
+      const { pathname } = new URL(req.url);
 
       if (req.method === 'OPTIONS') {
         return new Response(null, {
@@ -487,34 +468,31 @@ export function createDevServer(
         return devResponse(req, await renderDevHtml(enableLiveReload), 'text/html; charset=utf-8');
       }
 
-      const cleanPath = pathname.startsWith('/') ? pathname.slice(1) : pathname;
+      const cleanPath = pathname.replace(/^\/+/, '');
 
       if (pathname.endsWith('.css')) {
-        const filePath = join(CONFIG.root, cleanPath);
         try {
-          const css = await compileTailwind(false, filePath);
+          const css = await compileTailwind(false, join(CONFIG.root, cleanPath));
           return devResponse(req, css, 'text/css; charset=utf-8');
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : String(err);
-          server.publish('hmr', JSON.stringify({ type: 'build-error', message }));
+          notify({ type: 'build-error', message });
           return new Response(message, { status: 500, headers: { 'Access-Control-Allow-Origin': '*' } });
         }
       }
 
-      let scriptFilePath: string | null = null;
-      if (pathname.startsWith('/src/')) {
-        const fullPath = join(CONFIG.root, cleanPath);
-        scriptFilePath = existsSync(fullPath)
-          ? fullPath
-          : resolveCandidate(fullPath.replace(/\.(?:[tj]sx?|mjs)$/, ''), ['.tsx', '.ts', '.jsx', '.js']);
-      } else if (isScriptFile(pathname)) {
-        scriptFilePath = join(CONFIG.root, cleanPath);
-      }
+      const scriptPath = pathname.startsWith('/src/')
+        ? (existsSync(join(CONFIG.root, cleanPath))
+            ? join(CONFIG.root, cleanPath)
+            : resolveCandidate(join(CONFIG.root, cleanPath).replace(/\.(?:[tj]sx?|mjs)$/, '')))
+        : isScriptFile(pathname)
+          ? join(CONFIG.root, cleanPath)
+          : null;
 
-      if (scriptFilePath) {
-        const result = await compileTypeScript(scriptFilePath);
+      if (scriptPath) {
+        const result = await compileTypeScript(scriptPath);
         if ('error' in result) {
-          server.publish('hmr', JSON.stringify({ type: 'build-error', message: result.error }));
+          notify({ type: 'build-error', message: result.error });
           return new Response(result.error, { status: 500, headers: { 'Access-Control-Allow-Origin': '*' } });
         }
         return devResponse(req, result.code, 'application/javascript; charset=utf-8');
@@ -624,18 +602,14 @@ export async function getBuildSummary(
   const entries = await readdir(distDir, { recursive: true });
   const results = await Promise.all(
     entries.map(async (entry) => {
-      try {
-        const f = bunFile(join(distDir, entry));
-        if ((await f.stat()).isFile()) {
-          const bytes = await f.bytes();
-          return {
-            path: entry.replaceAll('\\', '/'),
-            size: bytes.byteLength,
-            gzip: Bun.gzipSync(bytes).byteLength,
-          };
-        }
-      } catch (_) {}
-      return null;
+      const f = bunFile(join(distDir, entry));
+      if (!(await f.stat().catch(() => null))?.isFile()) return null;
+      const bytes = await f.bytes();
+      return {
+        path: entry.replaceAll('\\', '/'),
+        size: bytes.byteLength,
+        gzip: Bun.gzipSync(bytes).byteLength,
+      };
     }),
   );
 
@@ -664,8 +638,7 @@ export function previewProduction(port = CONFIG.previewPort): Server<unknown> {
           ? { 'Cache-Control': 'public, max-age=31536000, immutable' }
           : {};
 
-        const acceptsGzip = req.headers.get('accept-encoding')?.includes('gzip');
-        if (acceptsGzip && /\.(?:html?|js|css|json|svg|txt|xml|map)$/i.test(path)) {
+        if (req.headers.get('accept-encoding')?.includes('gzip') && /\.(?:html?|js|css|json|svg|txt|xml|map)$/i.test(path)) {
           let gzipped = gzipCache.get(filePath);
           if (!gzipped) {
             gzipped = Bun.gzipSync(await file.bytes());
