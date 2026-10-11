@@ -11,6 +11,16 @@ This skill defines rules for using **language injection comment tags** (`/*html*
 
 It targets the [Inline HTML](https://marketplace.visualstudio.com/items?itemName=pushqrdx.inline-html) VS Code extension (`pushqrdx.inline-html`) and standard Prettier inline HTML formatters.
 
+> [!IMPORTANT]
+> **Application UI Components Use TSX:**
+> In this workspace, client application components must be written as **TSX (`.tsx`)** functional components powered by `jsx-dom` (see `typescript-guidelines`).
+> Use `/*html*/`, `/*css*/`, and `/*svg*/` comment injection tags specifically for **raw string template literals**, such as:
+> - Server/bundler engine scripts (e.g., `HMR_CLIENT_SCRIPT` in `vite.ts`)
+> - Injected `<style>` blocks or runtime CSS template strings
+> - Backend HTML string generation or test fixtures
+>
+> Never use raw template strings with `innerHTML` for client application UI components.
+
 ---
 
 ## 1. Core Purpose & Benefits
@@ -31,18 +41,16 @@ Using `/*html*/` immediately preceding a template literal transforms raw strings
 Place `/*html*/` immediately before the opening backtick with no intervening newlines:
 
 ```typescript
-// ✅ Correct:
-const TodoItem = (todo: Todo) => /*html*/ `
-	<li class="todo-item flex items-center gap-3">
-		<span class="text-sm text-zinc-200">${todo.text}</span>
-	</li>
+// ✅ Correct (server/engine script or template):
+const HMR_CLIENT_SCRIPT = /*html*/ `
+  <script>
+    console.log("HMR connected");
+  </script>
 `;
 
-// ✅ Correct (inlined assignment):
-root.innerHTML = /*html*/ `
-	<div class="max-w-md mx-auto p-4">
-		<h1 class="text-lg font-semibold">Tasks</h1>
-	</div>
+// ✅ Correct (dynamic CSS):
+const resetStyles = /*css*/ `
+  *, ::before, ::after { box-sizing: border-box; }
 `;
 ```
 
@@ -70,9 +78,9 @@ const template = html`<div>...</div>`;
 
 | Tag | Target Content | Supported Features |
 | :--- | :--- | :--- |
-| `/*html*/` | HTML templates, components, innerHTML | Highlighting, Emmet, tag completion, Prettier formatting |
+| `/*html*/` | Server HTML templates, engine scripts, fixtures | Highlighting, Emmet, tag completion, Prettier formatting |
 | `/*css*/` | Injected `<style>` blocks, dynamic stylesheets | CSS autocomplete, property validation, formatting |
-| `/*svg*/` | Standalone SVG markup, icons | XML/SVG syntax coloring and attribute completion |
+| `/*svg*/` | Raw XML/SVG template strings | XML/SVG syntax coloring and attribute completion |
 | `/*sql*/` | Database queries | SQL syntax highlighting |
 
 ---
@@ -82,14 +90,14 @@ const template = html`<div>...</div>`;
 As defined in `code-comments-guidelines`:
 - `/*html*/`, `/*css*/`, and `/*svg*/` are **Tooling Directives / Language Injection Annotations**.
 - They are **NOT** decorative, narrative, or non-useful comments.
-- They are **explicitly permitted** and recommended on all multiline HTML and SVG template literals across the codebase.
+- They are **explicitly permitted** and recommended on multiline HTML, CSS, and SVG template literals.
 
 ---
 
-## 5. Checklist for Component Writing
+## 5. Checklist for Raw Template Strings
 
-When writing or refactoring functional HTML components:
+When writing raw HTML/CSS template strings (in server, engine, or fixture code):
 
-1. [ ] **Tag all HTML template strings:** Prepend `/*html*/ ` directly before the opening backtick of any HTML markup literal.
-2. [ ] **Tag SVG helper functions:** Prepend `/*svg*/ ` or `/*html*/ ` to inline SVG icons.
-3. [ ] **Format consistency:** Ensure `bun run format` cleanly formats the internal HTML indentation.
+1. [ ] **Tag all HTML template strings:** Prepend `/*html*/ ` directly before the opening backtick of any raw HTML markup literal.
+2. [ ] **Tag CSS template strings:** Prepend `/*css*/ ` directly before CSS string templates.
+3. [ ] **App UI uses TSX:** Ensure client UI components are built in `.tsx` using native `jsx-dom` components, not raw `/*html*/` strings.
